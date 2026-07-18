@@ -44,6 +44,39 @@ Total:     ₹1,74,000
 Currency:  INR
 ```
 
+```
+GET /invoices/1001
+
+Response:
+Invoice #1001
+Status:   Partially Paid
+Sender:   Reliance Retail, Mumbai (GSTIN: 27AAACR...)
+Receiver: Tata Steel, Bangalore (GSTIN: 29AAACT...)
+
+Line Items:
+| Description      | Qty | Price    | Tax  | Juris  | Total     |
+|------------------|-----|----------|------|--------|-----------|
+| Industrial Pump  |  2  | ₹50,000  | 18%  | MH     | ₹1,18,000 |
+| Safety Valves    | 10  | ₹5,000   | 12%  | KA     | ₹56,000   |
+
+Subtotal:        ₹1,50,000
+Tax:             ₹24,000
+Invoice Total:   ₹1,74,000
+Paid:            ₹1,00,000
+Credit Memos:   -₹10,000
+Outstanding:     ₹64,000
+
+Payment History:
+P001  Jan 20  ₹1,00,000  RTGS  UTR:HDFC2024012000123  Applied
+CM001 Jan 25  ₹10,000    Credit Memo                   Applied
+
+Status History:
+Jan 15 09:00  Rahul   Draft
+Jan 15 10:00  Priya   Approved
+Jan 15 11:00  Rahul   Sent
+Jan 20 14:00  System  Partially Paid
+```
+
 ### Future Enhancements (Phase 2)
 - E-invoicing compliance: India IRP/IRN mandate, EU Peppol network
 - Full tax engine (CGST/SGST/IGST rules)
@@ -591,6 +624,18 @@ FX Loss:  -₹1,800
 FX Gain:  +₹4,800
 Net:      +₹3,000
 ```
+
+Missing Exchange Rate Handling:
+If rate not found for invoice date:
+→ Use most recent available rate
+→ Flag invoice for manual review
+→ Never block invoice creation
+
+Example:
+Invoice date: Jan 1 (Sunday, markets closed, no rate available)
+System uses:  Dec 31 rate (most recent available)
+Flags:        "Rate from Dec 31 used — manual review recommended"
+Audit trail:  Records which rate was used and why
 
 ### Future Enhancements (Phase 2)
 - Multiple exchange rate types (spot/forward/average)
