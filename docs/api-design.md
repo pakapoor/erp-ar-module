@@ -37,6 +37,8 @@ Optimistic locking (ABA prevention):
 - Write operations include If-Match: <version> header
 - Server rejects if version mismatch → 409 Conflict
 - Forces client to re-fetch latest state before acting
+- Version starts at 1 and increments on every invoice mutation, including
+  status, balance, allocation, and credit memo changes
 - Uses PostgreSQL version column — NOT Redis (Redis not durable enough for financial systems)
 
 Common error response format:
@@ -66,6 +68,15 @@ Synchronous vs Async:
 - Single operations → synchronous (< 300ms p99)
 - Bulk operations → async (202 Accepted + job_id)
 - External side effects (email, PDF) → always async
+
+Prototype lifecycle scope:
+- The required prototype does not implement invoice delivery or a `/send` endpoint.
+- Payment allocation accepts invoices in `APPROVED`, `SENT`, or
+  `PARTIALLY_PAID` status. Approval establishes the receivable; delivery is not
+  a prerequisite for recording money received.
+- `SENT` remains in the domain lifecycle for a production delivery subsystem
+  (email, EDI, e-invoicing, or customer portal), which would transition
+  `APPROVED → SENT` and record delivery metadata.
 
 ---
 
@@ -178,12 +189,12 @@ GET /api/v1/invoices/uuid-1001
 Authorization: Bearer <jwt>
 
 Response: HTTP 200 OK
-ETag: "1"  ← version number, used as If-Match on subsequent writes
+ETag: "5"  ← version number, used as If-Match on subsequent writes
 
 {
   "id": "uuid-1001",
   "status": "PARTIALLY_PAID",
-  "version": 1,
+  "version": 5,
   "customer": {
     "id": "uuid-tata-steel",
     "name": "Tata Steel"

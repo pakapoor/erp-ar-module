@@ -142,7 +142,9 @@ Status: Draft → Approved ✅
 
 ## FR3 — Invoice Sending
 
-After approval, invoice status transitions to Sent when delivered to customer. System records sent timestamp and delivery confirmation.
+**Production extension — outside the required prototype API scope.**
+
+After approval, invoice status transitions to Sent when delivered to customer. System records sent timestamp and delivery confirmation. The prototype does not implement delivery; it may record payments against invoices in APPROVED, SENT, or PARTIALLY_PAID status because approval establishes the receivable.
 
 ```
 POST /invoices/{id}/send
