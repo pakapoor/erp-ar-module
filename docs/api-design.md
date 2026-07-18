@@ -75,6 +75,9 @@ Why NOT Redis locks:
 → PostgreSQL version column = ACID guaranteed
 ```
 
+The version starts at 1 and increments on every invoice mutation, including
+status, balance, payment allocation, and credit memo changes.
+
 ### Common Error Response Format
 
 ```json
@@ -259,14 +262,14 @@ No idempotency key needed — GET is read-only, no state changes.
 
 **Response Headers:**
 ```
-ETag: "1"   ← version number, used as If-Match on subsequent writes
+ETag: "5"   ← version number, used as If-Match on subsequent writes
 ```
 
 ```json
 {
   "id": "uuid-1001",
   "status": "PARTIALLY_PAID",
-  "version": 4,
+  "version": 5,
   "customer": {
     "id": "uuid-tata-steel",
     "name": "Tata Steel"
@@ -498,6 +501,11 @@ Content-Type: application/json
 
 ### Validations
 
+The prototype does not implement invoice delivery. Approval establishes the
+receivable, so both allocation modes accept invoices in `APPROVED`, `SENT`, or
+`PARTIALLY_PAID` status. `SENT` remains part of the production lifecycle for a
+future delivery subsystem.
+
 ```
 Customer:
 → customer_id exists and belongs to tenant
@@ -505,11 +513,12 @@ Customer:
 
 Invoices (AUTO mode):
 → customer has open invoices
-→ invoices in SENT/PARTIALLY_PAID status only
+→ invoices in APPROVED/SENT/PARTIALLY_PAID status only
 → not DRAFT/VOID/WRITTEN_OFF
 
 Invoices (MANUAL mode):
 → each invoice_id exists and belongs to customer
+→ each invoice is in APPROVED/SENT/PARTIALLY_PAID status
 → sum of allocations <= payment amount
 → each allocation <= invoice outstanding balance
 
@@ -654,17 +663,16 @@ Shows explicit as_of timestamp so user knows data freshness.
 ```
 GET /api/v1/customers/uuid-tata-steel/aging
     ?entity_id=uuid-retail
-    &as_of=2024-01-31
 Authorization: Bearer <jwt>
 ```
 
 **Query Parameters:**
 ```
 entity_id  ← optional, defaults to JWT entity
-as_of      ← optional, defaults to today
-             used for historical aging reports
-             cannot be future date
 ```
+
+The prototype returns current aging only. The response `as_of` value is the
+materialized-view refresh timestamp, not a caller-selected historical date.
 
 No idempotency key or ETag needed:
 ```
@@ -717,8 +725,14 @@ No idempotency key or ETag needed:
 ```
 403 → customer belongs to different tenant
 404 → customer not found
-422 → as_of date is in the future
 ```
+
+### Future Enhancement — Historical Aging
+
+A historical `as_of` query must reconstruct the balance from dated payments,
+allocations, credit memos, write-offs, voids, and reversals, or read from
+persisted daily snapshots. It cannot use the invoice's current
+`balance_amount`. This is outside the required prototype scope.
 
 ---
 

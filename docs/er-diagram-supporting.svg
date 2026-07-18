@@ -1,6 +1,6 @@
 <svg width="100%" viewBox="0 0 680 960" role="img" xmlns="http://www.w3.org/2000/svg">
 <title>Supporting entities ER diagram — ERP AR Module</title>
-<desc>Supporting tables: Invoice Line Item, Payment Allocation, Credit Memo, Journal Entry Line, Audit Log, Accounting Period, Exchange Rate, User — all with connections to parent entities</desc>
+<desc>Supporting tables and derived read models: Invoice Line Item, Payment Allocation, Credit Memo, Journal Entry Line, Audit Log, Accounting Period, Exchange Rate, User, and the current-only AR Aging materialized view</desc>
 <defs>
 <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
 <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -138,6 +138,20 @@ text { font-family: sans-serif; fill: #3d3d3a; }
 <text class="ts teal-text" x="480" y="696" text-anchor="middle" dominant-baseline="central">status</text>
 <text class="ts teal-text" x="480" y="712" text-anchor="middle" dominant-baseline="central">OPEN/CLOSED/LOCKED</text>
 <text class="ts teal-text" x="480" y="728" text-anchor="middle" dominant-baseline="central">closed_by FK</text>
+
+<!-- Invoice → AR Aging materialized view (derived) -->
+<path d="M90 56 L190 56 L190 580 L280 580 L280 600" stroke="#5F5E5A" stroke-width="0.5" stroke-dasharray="4 3" fill="none" marker-end="url(#arrow)"/>
+<text class="ts gray-text" x="222" y="574" dominant-baseline="central">derived</text>
+
+<!-- AR Aging materialized view -->
+<rect x="200" y="600" width="160" height="140" rx="8" stroke-width="0.5" class="gray-fill"/>
+<text class="th gray-text" x="280" y="628" text-anchor="middle" dominant-baseline="central">AR aging (MV)</text>
+<text class="ts gray-text" x="280" y="648" text-anchor="middle" dominant-baseline="central">tenant_id, entity_id</text>
+<text class="ts gray-text" x="280" y="664" text-anchor="middle" dominant-baseline="central">customer_id</text>
+<text class="ts gray-text" x="280" y="680" text-anchor="middle" dominant-baseline="central">current, days_30</text>
+<text class="ts gray-text" x="280" y="696" text-anchor="middle" dominant-baseline="central">days_60, days_90_plus</text>
+<text class="ts gray-text" x="280" y="712" text-anchor="middle" dominant-baseline="central">as_of (refresh time)</text>
+<text class="ts gray-text" x="280" y="728" text-anchor="middle" dominant-baseline="central">current snapshot only</text>
 
 <!-- Tenant → User -->
 <path d="M610 56 L660 56 L660 600 L660 760 L180 760" stroke="#534AB7" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>

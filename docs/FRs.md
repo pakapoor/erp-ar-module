@@ -404,6 +404,10 @@ Invoice Status: Void ✅
 
 System must generate AR aging report showing outstanding invoice balances grouped by days overdue. Used by CFO and collections team to track overdue payments and identify write-off candidates.
 
+The prototype reports the current aging snapshot. Its `as_of` value identifies
+when the materialized view was refreshed; clients cannot request an arbitrary
+historical date.
+
 **Aging Buckets:**
 - Current → not yet due (due_date >= today)
 - 30 days → overdue 1-30 days
@@ -440,6 +444,7 @@ Invoice detail:
 - Aging report by entity/subsidiary
 - Aging report export (PDF/Excel)
 - Aging trends (this month vs last month)
+- Historical `as_of` reporting using dated financial events or daily snapshots
 
 ---
 

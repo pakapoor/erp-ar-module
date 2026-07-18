@@ -35,6 +35,7 @@
 | Accounting Period | Month/year close tracking |
 | Exchange Rate | Daily currency conversion rates |
 | Credit Memo | Correction document against an invoice |
+| AR Aging (materialized view) | Current derived snapshot by tenant, entity, and customer; refreshed every 5 minutes |
 
 ---
 
@@ -63,7 +64,8 @@ Key design decisions in the schema:
 - SOX segregation enforced via CHECK constraint: invoice creator != approver
 - Period close enforced via DB trigger — blocks posting to closed periods
 - Idempotency keys table prevents duplicate payment processing
-- AR Aging as materialized view — refreshed every 5 minutes
+- AR Aging as a current-only materialized view — refreshed every 5 minutes;
+  historical reporting requires event reconstruction or persisted snapshots
 
 ---
 

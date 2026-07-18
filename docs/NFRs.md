@@ -111,7 +111,8 @@ FROM invoices
 GROUP BY customer_id, tenant_id;
 
 -- Refreshed every 5 minutes via scheduled job
--- Shows explicit as_of timestamp to user
+-- Shows explicit refresh-time as_of timestamp to user
+-- Current snapshot only; it does not answer historical as_of queries
 ```
 
 **Example Response:**
@@ -141,6 +142,7 @@ Aging report:   5 min stale     ← relaxed, shown explicitly to user
 - On-demand aging refresh (manual trigger)
 - Per-customer refresh on payment received
 - Read replicas for reporting queries
+- Historical aging reconstructed from dated financial events or daily snapshots
 
 ---
 

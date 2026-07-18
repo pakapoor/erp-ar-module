@@ -656,7 +656,8 @@ CREATE INDEX idx_idempotency_expires ON idempotency_key(expires_at);
 -- ============================================================
 -- MATERIALIZED VIEW: AR AGING
 -- Pre-computed for performance (refreshed every 5 minutes)
--- Shows "as_of" timestamp so users know staleness
+-- Current snapshot only. "as_of" is the refresh timestamp so users know
+-- staleness; it is not a caller-selected historical reporting date.
 -- ============================================================
 CREATE MATERIALIZED VIEW ar_aging AS
 SELECT
