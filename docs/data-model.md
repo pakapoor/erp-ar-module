@@ -2,7 +2,8 @@
 
 ## Table of Contents
 - [Entity List](#entity-list)
-- [ER Diagram](er-diagram.md)
+- [ER Diagram — Core Entities](#er-diagram--core-entities)
+- [ER Diagram — Supporting Entities](#er-diagram--supporting-entities)
 - [Table Schemas](#table-schemas)
 - [Key Design Decisions](#key-design-decisions)
 
@@ -34,3 +35,25 @@
 | Accounting Period | Month/year close tracking |
 | Exchange Rate | Daily currency conversion rates |
 | Credit Memo | Correction document against an invoice |
+
+---
+
+## ER Diagram — Core Entities
+
+![Core entities ER diagram](er-diagram-core.svg)
+
+---
+
+## ER Diagram — Supporting Entities
+
+![Supporting entities ER diagram](er-diagram-supporting.svg)
+
+---
+
+## Table Schemas
+Coming soon — see migrations/001_initial_schema.sql
+
+---
+
+## Key Design Decisions
+Coming soon

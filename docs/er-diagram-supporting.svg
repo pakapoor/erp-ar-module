@@ -1,0 +1,182 @@
+<svg width="100%" viewBox="0 0 680 960" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>Supporting entities ER diagram — ERP AR Module</title>
+<desc>Supporting tables: Invoice Line Item, Payment Allocation, Credit Memo, Journal Entry Line, Audit Log, Accounting Period, Exchange Rate, User — all with connections to parent entities</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+<style>
+text { font-family: sans-serif; fill: #3d3d3a; }
+.th { font-size: 14px; font-weight: 600; }
+.ts { font-size: 12px; }
+.purple-fill { fill: #EEEDFE; stroke: #534AB7; }
+.teal-fill   { fill: #E1F5EE; stroke: #0F6E56; }
+.coral-fill  { fill: #FAECE7; stroke: #993C1D; }
+.amber-fill  { fill: #FAEEDA; stroke: #BA7517; }
+.blue-fill   { fill: #E6F1FB; stroke: #185FA5; }
+.gray-fill   { fill: #F1EFE8; stroke: #5F5E5A; }
+.purple-text { fill: #3C3489; }
+.teal-text   { fill: #085041; }
+.coral-text  { fill: #712B13; }
+.amber-text  { fill: #633806; }
+.blue-text   { fill: #0C447C; }
+.gray-text   { fill: #444441; }
+</style>
+</defs>
+
+<!-- ============================================================ -->
+<!-- ROW 1: Reference stubs (Invoice, Payment, Journal, Tenant)   -->
+<!-- ============================================================ -->
+
+<!-- Invoice stub -->
+<rect x="20" y="20" width="140" height="36" rx="6" stroke-width="0.5" class="coral-fill"/>
+<text class="th coral-text" x="90" y="38" text-anchor="middle" dominant-baseline="central">Invoice (ref)</text>
+
+<!-- Payment stub -->
+<rect x="200" y="20" width="140" height="36" rx="6" stroke-width="0.5" class="amber-fill"/>
+<text class="th amber-text" x="270" y="38" text-anchor="middle" dominant-baseline="central">Payment (ref)</text>
+
+<!-- Journal Entry stub -->
+<rect x="380" y="20" width="160" height="36" rx="6" stroke-width="0.5" class="blue-fill"/>
+<text class="th blue-text" x="460" y="38" text-anchor="middle" dominant-baseline="central">Journal entry (ref)</text>
+
+<!-- Tenant stub -->
+<rect x="560" y="20" width="100" height="36" rx="6" stroke-width="0.5" class="purple-fill"/>
+<text class="th purple-text" x="610" y="38" text-anchor="middle" dominant-baseline="central">Tenant (ref)</text>
+
+<!-- ============================================================ -->
+<!-- ROW 2: Invoice Line Item, Payment Allocation, Credit Memo    -->
+<!-- ============================================================ -->
+
+<!-- Invoice → Invoice Line Item -->
+<path d="M90 56 L90 160" stroke="#993C1D" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<text class="ts" x="96" y="110" dominant-baseline="central">1:N</text>
+
+<!-- Invoice Line Item -->
+<rect x="20" y="160" width="160" height="140" rx="8" stroke-width="0.5" class="gray-fill"/>
+<text class="th gray-text" x="100" y="188" text-anchor="middle" dominant-baseline="central">Invoice line item</text>
+<text class="ts gray-text" x="100" y="208" text-anchor="middle" dominant-baseline="central">id, invoice_id FK</text>
+<text class="ts gray-text" x="100" y="224" text-anchor="middle" dominant-baseline="central">description, qty</text>
+<text class="ts gray-text" x="100" y="240" text-anchor="middle" dominant-baseline="central">unit_price, tax_rate</text>
+<text class="ts gray-text" x="100" y="256" text-anchor="middle" dominant-baseline="central">tax_jurisdiction</text>
+<text class="ts gray-text" x="100" y="272" text-anchor="middle" dominant-baseline="central">tax_amount, total</text>
+
+<!-- Invoice → Payment Allocation -->
+<path d="M90 56 L90 80 L270 80 L270 160" stroke="#993C1D" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<text class="ts" x="276" y="110" dominant-baseline="central">1:N</text>
+
+<!-- Payment → Payment Allocation -->
+<path d="M270 56 L270 160" stroke="#BA7517" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+
+<!-- Payment Allocation (bridge table) -->
+<rect x="200" y="160" width="160" height="130" rx="8" stroke-width="0.5" class="gray-fill"/>
+<text class="th gray-text" x="280" y="188" text-anchor="middle" dominant-baseline="central">Payment allocation</text>
+<text class="ts gray-text" x="280" y="208" text-anchor="middle" dominant-baseline="central">id</text>
+<text class="ts gray-text" x="280" y="224" text-anchor="middle" dominant-baseline="central">payment_id FK</text>
+<text class="ts gray-text" x="280" y="240" text-anchor="middle" dominant-baseline="central">invoice_id FK</text>
+<text class="ts gray-text" x="280" y="256" text-anchor="middle" dominant-baseline="central">amount_allocated</text>
+<text class="ts gray-text" x="280" y="272" text-anchor="middle" dominant-baseline="central">created_at</text>
+
+<!-- Invoice → Credit Memo -->
+<path d="M90 56 L90 80 L460 80 L460 160" stroke="#993C1D" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<text class="ts" x="466" y="120" dominant-baseline="central">1:N</text>
+
+<!-- Credit Memo -->
+<rect x="390" y="160" width="160" height="130" rx="8" stroke-width="0.5" class="gray-fill"/>
+<text class="th gray-text" x="470" y="188" text-anchor="middle" dominant-baseline="central">Credit memo</text>
+<text class="ts gray-text" x="470" y="208" text-anchor="middle" dominant-baseline="central">id, tenant_id FK</text>
+<text class="ts gray-text" x="470" y="224" text-anchor="middle" dominant-baseline="central">invoice_id FK</text>
+<text class="ts gray-text" x="470" y="240" text-anchor="middle" dominant-baseline="central">reason_code</text>
+<text class="ts gray-text" x="470" y="256" text-anchor="middle" dominant-baseline="central">amount, status</text>
+<text class="ts gray-text" x="470" y="272" text-anchor="middle" dominant-baseline="central">approved_by FK</text>
+
+<!-- ============================================================ -->
+<!-- ROW 3: Journal Entry Line, Exchange Rate, Accounting Period  -->
+<!-- ============================================================ -->
+
+<!-- Journal Entry → Journal Entry Line -->
+<path d="M460 56 L460 100 L280 100 L280 380" stroke="#185FA5" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<text class="ts" x="286" y="240" dominant-baseline="central">1:N</text>
+
+<!-- Journal Entry Line -->
+<rect x="200" y="380" width="160" height="120" rx="8" stroke-width="0.5" class="blue-fill"/>
+<text class="th blue-text" x="280" y="408" text-anchor="middle" dominant-baseline="central">Journal entry line</text>
+<text class="ts blue-text" x="280" y="428" text-anchor="middle" dominant-baseline="central">id</text>
+<text class="ts blue-text" x="280" y="444" text-anchor="middle" dominant-baseline="central">journal_entry_id FK</text>
+<text class="ts blue-text" x="280" y="460" text-anchor="middle" dominant-baseline="central">gl_account_id FK</text>
+<text class="ts blue-text" x="280" y="476" text-anchor="middle" dominant-baseline="central">debit_amount</text>
+<text class="ts blue-text" x="280" y="492" text-anchor="middle" dominant-baseline="central">credit_amount</text>
+
+<!-- Tenant → Exchange Rate -->
+<path d="M610 56 L610 380" stroke="#534AB7" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<text class="ts" x="616" y="220" dominant-baseline="central">1:N</text>
+
+<!-- Exchange Rate -->
+<rect x="490" y="380" width="170" height="140" rx="8" stroke-width="0.5" class="teal-fill"/>
+<text class="th teal-text" x="575" y="408" text-anchor="middle" dominant-baseline="central">Exchange rate</text>
+<text class="ts teal-text" x="575" y="428" text-anchor="middle" dominant-baseline="central">id, tenant_id FK</text>
+<text class="ts teal-text" x="575" y="444" text-anchor="middle" dominant-baseline="central">from_currency</text>
+<text class="ts teal-text" x="575" y="460" text-anchor="middle" dominant-baseline="central">to_currency</text>
+<text class="ts teal-text" x="575" y="476" text-anchor="middle" dominant-baseline="central">rate</text>
+<text class="ts teal-text" x="575" y="492" text-anchor="middle" dominant-baseline="central">effective_date</text>
+<text class="ts teal-text" x="575" y="508" text-anchor="middle" dominant-baseline="central">fetched daily 2am</text>
+
+<!-- ============================================================ -->
+<!-- ROW 4: User, Audit Log, Accounting Period                    -->
+<!-- ============================================================ -->
+
+<!-- Tenant → Accounting Period -->
+<path d="M610 56 L640 56 L640 600 L570 600" stroke="#534AB7" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<text class="ts" x="645" y="330" dominant-baseline="central">1:N</text>
+
+<!-- Accounting Period -->
+<rect x="390" y="600" width="180" height="140" rx="8" stroke-width="0.5" class="teal-fill"/>
+<text class="th teal-text" x="480" y="628" text-anchor="middle" dominant-baseline="central">Accounting period</text>
+<text class="ts teal-text" x="480" y="648" text-anchor="middle" dominant-baseline="central">id, tenant_id FK</text>
+<text class="ts teal-text" x="480" y="664" text-anchor="middle" dominant-baseline="central">period_name</text>
+<text class="ts teal-text" x="480" y="680" text-anchor="middle" dominant-baseline="central">start_date, end_date</text>
+<text class="ts teal-text" x="480" y="696" text-anchor="middle" dominant-baseline="central">status</text>
+<text class="ts teal-text" x="480" y="712" text-anchor="middle" dominant-baseline="central">OPEN/CLOSED/LOCKED</text>
+<text class="ts teal-text" x="480" y="728" text-anchor="middle" dominant-baseline="central">closed_by FK</text>
+
+<!-- Tenant → User -->
+<path d="M610 56 L660 56 L660 600 L660 760 L180 760" stroke="#534AB7" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<text class="ts" x="38" y="720" dominant-baseline="central">1:N</text>
+
+<!-- User -->
+<rect x="20" y="600" width="160" height="140" rx="8" stroke-width="0.5" class="purple-fill"/>
+<text class="th purple-text" x="100" y="628" text-anchor="middle" dominant-baseline="central">User</text>
+<text class="ts purple-text" x="100" y="648" text-anchor="middle" dominant-baseline="central">id, tenant_id FK</text>
+<text class="ts purple-text" x="100" y="664" text-anchor="middle" dominant-baseline="central">entity_id FK</text>
+<text class="ts purple-text" x="100" y="680" text-anchor="middle" dominant-baseline="central">name, email</text>
+<text class="ts purple-text" x="100" y="696" text-anchor="middle" dominant-baseline="central">roles</text>
+<text class="ts purple-text" x="100" y="712" text-anchor="middle" dominant-baseline="central">manager_id FK</text>
+<text class="ts purple-text" x="100" y="728" text-anchor="middle" dominant-baseline="central">delegate_id FK</text>
+
+<!-- User self-referential (manager) -->
+<path d="M20 680 L0 680 L0 660 L20 660" stroke="#534AB7" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+
+<!-- User → Audit Log -->
+<path d="M100 740 L100 780" stroke="#534AB7" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<text class="ts" x="106" y="762" dominant-baseline="central">1:N</text>
+
+<!-- Audit Log -->
+<rect x="20" y="780" width="340" height="140" rx="8" stroke-width="0.5" class="gray-fill"/>
+<text class="th gray-text" x="190" y="808" text-anchor="middle" dominant-baseline="central">Audit log</text>
+<text class="ts gray-text" x="190" y="828" text-anchor="middle" dominant-baseline="central">id, tenant_id FK</text>
+<text class="ts gray-text" x="190" y="844" text-anchor="middle" dominant-baseline="central">table_name (invoices/payments/...)</text>
+<text class="ts gray-text" x="190" y="860" text-anchor="middle" dominant-baseline="central">record_id, action (INSERT/UPDATE)</text>
+<text class="ts gray-text" x="190" y="876" text-anchor="middle" dominant-baseline="central">old_value JSON, new_value JSON</text>
+<text class="ts gray-text" x="190" y="892" text-anchor="middle" dominant-baseline="central">changed_by FK, changed_at</text>
+
+<!-- Legend -->
+<rect x="20" y="930" width="12" height="12" rx="2" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text class="ts" x="38" y="938" dominant-baseline="central">Foundation/Users</text>
+<rect x="170" y="930" width="12" height="12" rx="2" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text class="ts" x="188" y="938" dominant-baseline="central">Period/FX</text>
+<rect x="270" y="930" width="12" height="12" rx="2" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text class="ts" x="288" y="938" dominant-baseline="central">Accounting lines</text>
+<rect x="410" y="930" width="12" height="12" rx="2" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text class="ts" x="428" y="938" dominant-baseline="central">Supporting</text>
+
+</svg>
