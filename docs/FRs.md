@@ -127,8 +127,9 @@ Step 5: Priya approves ✅
         created_by ≠ approved_by → SOX compliant ✅
 
 Auto GL Entry Generated:
-Debit:  1200 AR        ₹1,74,000  ← Tata Steel owes Reliance
-Credit: 3100 Revenue   ₹1,74,000  ← Reliance earned it
+Debit:  1200 AR           ₹1,74,000  ← Tata Steel owes Reliance
+Credit: 3100 Revenue      ₹1,50,000  ← Reliance earned it
+Credit: 2200 Tax Payable    ₹24,000  ← collected for the government
 
 Status: Draft → Approved ✅
 ```
@@ -311,6 +312,9 @@ GL Entry:
 Debit:  3100 Revenue   ₹10,000  ← un-earned
 Credit: 1200 AR        ₹10,000  ← Tata Steel owes less
 
+If the credited amount includes tax, reverse the corresponding Tax Payable
+amount as a separate debit rather than treating tax as revenue.
+
 Net Tata Steel owes: ₹1,64,000
 
 States: Draft → Approved → Applied
@@ -395,8 +399,9 @@ Approved by: Finance Manager
 
 GL Entry (if already approved):
 Reverse original entry:
-Debit:  3100 Revenue   ₹1,74,000  ← reverse
-Credit: 1200 AR        ₹1,74,000  ← reverse
+Debit:  3100 Revenue      ₹1,50,000  ← reverse revenue
+Debit:  2200 Tax Payable    ₹24,000  ← reverse tax liability
+Credit: 1200 AR           ₹1,74,000  ← remove receivable
 
 Invoice Status: Void ✅
 ```
@@ -466,7 +471,7 @@ Invoice #1001 — Complete Financial History:
 
 Date       | Entry | Type             | Debit               | Credit
 -----------|-------|------------------|---------------------|--------------------
-Jan 15     | JE001 | Invoice Approved | 1200 AR ₹1,74,000  | 3100 Rev ₹1,74,000
+Jan 15     | JE001 | Invoice Approved | 1200 AR ₹1,74,000  | 3100 Rev ₹1,50,000 + 2200 Tax Payable ₹24,000
 Jan 20     | JE002 | Payment Received | 1100 Cash ₹1,00,000 | 1200 AR ₹1,00,000
 Jan 25     | JE003 | Credit Memo      | 3100 Rev ₹10,000   | 1200 AR ₹10,000
 -----------|-------|------------------|---------------------|--------------------

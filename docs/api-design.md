@@ -407,8 +407,9 @@ Content-Type: application/json
 5.  Check SOX: approver_id != created_by
 6.  Find the tenant + entity period containing invoice_date; require OPEN
 7.  Generate GL journal entry:
-    Debit:  1200 AR       174000
-    Credit: 3100 Revenue  174000
+    Debit:  1200 AR           174000
+    Credit: 3100 Revenue      150000
+    Credit: 2200 Tax Payable   24000
 8.  Update invoice status → APPROVED
 9.  Increment version (1 → 2)
 10. Mark idempotency key COMPLETED
@@ -664,7 +665,7 @@ Credit: 4300 FX Gain/Loss   3000  ← difference
 422 → sum of manual allocations > payment amount
 422 → invoice not in payable status (DRAFT/VOID/WRITTEN_OFF)
 422 → no open invoices found (auto mode)
-503 → exchange rate unavailable (returns with fallback rate used)
+503 → no current or prior exchange rate is available
 ```
 
 ### Future Enhancements (Phase 2)
@@ -813,6 +814,7 @@ page_size    ← default 20, max 100
       "id": "uuid-JE001",
       "reference_type": "INVOICE",
       "reference_id": "uuid-1001",
+      "document_date": "2024-01-15",
       "entry_date": "2024-01-15",
       "description": "Invoice #1001 approved",
       "created_by": "priya-uuid",
@@ -827,7 +829,13 @@ page_size    ← default 20, max 100
           "account_code": "3100",
           "account_name": "Sales Revenue",
           "debit_amount": 0,
-          "credit_amount": 174000
+          "credit_amount": 150000
+        },
+        {
+          "account_code": "2200",
+          "account_name": "Tax Payable",
+          "debit_amount": 0,
+          "credit_amount": 24000
         }
       ],
       "total_debits": 174000,
@@ -838,6 +846,7 @@ page_size    ← default 20, max 100
       "id": "uuid-JE002",
       "reference_type": "PAYMENT",
       "reference_id": "uuid-P001",
+      "document_date": "2024-01-20",
       "entry_date": "2024-01-20",
       "description": "Payment P001 received from Tata Steel",
       "created_by": "system",
@@ -863,6 +872,7 @@ page_size    ← default 20, max 100
       "id": "uuid-JE003",
       "reference_type": "CREDIT_MEMO",
       "reference_id": "uuid-CM001",
+      "document_date": "2024-01-25",
       "entry_date": "2024-01-25",
       "description": "Credit memo CM001 — goods returned",
       "created_by": "priya-uuid",

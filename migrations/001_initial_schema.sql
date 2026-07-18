@@ -810,6 +810,7 @@ CREATE INDEX idx_ar_aging_tenant ON ar_aging(tenant_id);
 -- 1200 Accounts Receivable
 -- 1300 Inventory
 -- 2100 Customer Credit (overpayment liability)
+-- 2200 Tax Payable
 -- 3100 Sales Revenue
 -- 3200 Deferred Revenue
 -- 4100 Bad Debt Expense
