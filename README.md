@@ -19,6 +19,7 @@ For interview/review, follow this order:
 - [Functional Requirements](docs/FRs.md)
 - [Non Functional Requirements](docs/NFRs.md)
 - [Data Model](docs/data-model.md)
+- [ER Diagram](docs/er-diagram.md)
 - [API Design](docs/api-design.md)
 - [Financial Controls](docs/financial-controls.md)
 - [Experience Showcase](docs/experience-showcase.md)

@@ -2,7 +2,7 @@
 
 ## Table of Contents
 - [Entity List](#entity-list)
-- [ER Diagram](#er-diagram)
+- [ER Diagram](er-diagram.md)
 - [Table Schemas](#table-schemas)
 - [Key Design Decisions](#key-design-decisions)
 
