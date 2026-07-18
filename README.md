@@ -16,12 +16,12 @@ docker-compose up
 
 ## Design Walkthrough
 For interview/review, follow this order:
-1. [Functional Requirements](docs/FRs.md)
-2. [Non Functional Requirements](docs/NFRs.md)
-3. [Data Model](docs/data-model.md)
-4. [API Design](docs/api-design.md)
-5. [Financial Controls](docs/financial-controls.md)
-6. [Experience Showcase](docs/experience-showcase.md)
+- [Functional Requirements](docs/FRs.md)
+- [Non Functional Requirements](docs/NFRs.md)
+- [Data Model](docs/data-model.md)
+- [API Design](docs/api-design.md)
+- [Financial Controls](docs/financial-controls.md)
+- [Experience Showcase](docs/experience-showcase.md)
 
 ## Key Capabilities
 - Multi-tenant data isolation (JWT + PostgreSQL RLS)
