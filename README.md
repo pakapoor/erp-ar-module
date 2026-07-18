@@ -18,6 +18,7 @@ docker-compose up
 For interview/review, follow this order:
 - [Functional Requirements](docs/FRs.md)
 - [Non Functional Requirements](docs/NFRs.md)
+- [High Level Design](docs/high-level-design.md)
 - [Data Model](docs/data-model.md)
 - [API Design](docs/api-design.md)
 - [Financial Controls](docs/financial-controls.md)
