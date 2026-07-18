@@ -51,7 +51,19 @@
 ---
 
 ## Table Schemas
-Coming soon — see migrations/001_initial_schema.sql
+
+Full schema with all constraints, indexes, and RLS policies:
+[migrations/001_initial_schema.sql](../migrations/001_initial_schema.sql)
+
+Key design decisions in the schema:
+- UUID primary keys on all tables
+- Row Level Security on every table (tenant isolation at DB level)
+- Audit triggers fire automatically — cannot be bypassed by application code
+- Journal entries are immutable — no UPDATE/DELETE ever
+- SOX segregation enforced via CHECK constraint: invoice creator != approver
+- Period close enforced via DB trigger — blocks posting to closed periods
+- Idempotency keys table prevents duplicate payment processing
+- AR Aging as materialized view — refreshed every 5 minutes
 
 ---
 
