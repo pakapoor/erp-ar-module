@@ -308,6 +308,7 @@ CREATE TABLE invoice (
   approved_at           TIMESTAMP,
   rejection_reason      TEXT,
   sent_at               TIMESTAMP,
+  version               INTEGER NOT NULL DEFAULT 1,  -- optimistic locking (ABA prevention)
   created_at            TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at            TIMESTAMP NOT NULL DEFAULT NOW(),
 
