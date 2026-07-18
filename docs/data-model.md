@@ -36,6 +36,7 @@
 | Exchange Rate | Daily currency conversion rates |
 | Credit Memo | Correction document against an invoice |
 | AR Aging (materialized view) | Current derived snapshot by tenant, entity, and customer; refreshed every 5 minutes |
+| Idempotency Key | Tenant- and endpoint-scoped write claim with request hash and cached response |
 
 ---
 
@@ -62,8 +63,11 @@ Key design decisions in the schema:
 - Audit triggers fire automatically — cannot be bypassed by application code
 - Journal entries are immutable — no UPDATE/DELETE ever
 - SOX segregation enforced via CHECK constraint: invoice creator != approver
-- Period close enforced via DB trigger — blocks posting to closed periods
-- Idempotency keys table prevents duplicate payment processing
+- Period close enforced via DB triggers — CLOSED requires an audited reopen;
+  LOCKED is irreversible, and adjustments post to a current OPEN period while
+  preserving the original document date
+- Idempotency keys table prevents duplicate writes and safely replays completed
+  responses; payment references provide a second database uniqueness guard
 - AR Aging as a current-only materialized view — refreshed every 5 minutes;
   historical reporting requires event reconstruction or persisted snapshots
 

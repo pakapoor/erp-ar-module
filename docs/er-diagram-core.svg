@@ -101,6 +101,7 @@ text { font-family: sans-serif; fill: #3d3d3a; }
 <text class="ts amber-text" x="340" y="594" text-anchor="middle" dominant-baseline="central">customer_id FK</text>
 <text class="ts amber-text" x="340" y="610" text-anchor="middle" dominant-baseline="central">amount, currency</text>
 <text class="ts amber-text" x="340" y="626" text-anchor="middle" dominant-baseline="central">payment_reference</text>
+<text class="ts amber-text" x="340" y="642" text-anchor="middle" dominant-baseline="central">idempotency_key</text>
 
 <!-- Payment to Journal Entry -->
 <path d="M340 650 L340 720" stroke="#BA7517" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
@@ -111,13 +112,14 @@ text { font-family: sans-serif; fill: #3d3d3a; }
 <text class="ts" x="575" y="540" dominant-baseline="central">1:N</text>
 
 <!-- JOURNAL ENTRY -->
-<rect x="240" y="720" width="200" height="130" rx="8" stroke-width="0.5" class="blue-fill"/>
+<rect x="240" y="720" width="200" height="140" rx="8" stroke-width="0.5" class="blue-fill"/>
 <text class="th blue-text" x="340" y="748" text-anchor="middle" dominant-baseline="central">Journal entry</text>
 <text class="ts blue-text" x="340" y="768" text-anchor="middle" dominant-baseline="central">id, tenant_id FK</text>
 <text class="ts blue-text" x="340" y="784" text-anchor="middle" dominant-baseline="central">reference_type</text>
 <text class="ts blue-text" x="340" y="800" text-anchor="middle" dominant-baseline="central">reference_id</text>
-<text class="ts blue-text" x="340" y="816" text-anchor="middle" dominant-baseline="central">entry_date</text>
-<text class="ts blue-text" x="340" y="832" text-anchor="middle" dominant-baseline="central">debit = credit always</text>
+<text class="ts blue-text" x="340" y="816" text-anchor="middle" dominant-baseline="central">document_date, entry_date</text>
+<text class="ts blue-text" x="340" y="832" text-anchor="middle" dominant-baseline="central">period_id, adjusts_period_id</text>
+<text class="ts blue-text" x="340" y="848" text-anchor="middle" dominant-baseline="central">debit = credit always</text>
 
 <!-- Legend -->
 <rect x="20" y="870" width="12" height="12" rx="2" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>

@@ -174,6 +174,13 @@ System must record payments from customers and allocate them against one or more
 - payment_terms → NET30/NET60/NET90
 - due_date → invoice_date + payment_terms
 
+**Duplicate Prevention:**
+- Every write action uses one client-generated idempotency key across all retries.
+- A completed retry returns the original cached HTTP status and response body.
+- The same key with a different request payload is rejected.
+- A unique `(tenant_id, customer_id, payment_reference)` constraint provides a
+  second, race-safe defence against importing the same bank transaction twice.
+
 ```
 POST /payments
 
@@ -708,7 +715,7 @@ Mar 2024  | 2024-03-01 | 2024-03-31 | OPEN   | -         | -
 
 Rahul tries to approve invoice dated Jan 28 on Feb 5:
 ❌ "January 2024 is LOCKED. Cannot post.
-    Contact CFO to reopen or change invoice date."
+    Use a CFO-approved current-period adjustment."
 ```
 
 **Two Lock Levels:**
@@ -733,9 +740,15 @@ BEFORE INSERT → verify period is OPEN
 January LOCKED but error found?
 → Cannot reopen January
 → Post correction in current open period (March)
+→ Preserve document_date = original January date
+→ Set entry_date (posting date) = date in current open period
 → With clear reference to original January entry
 → Auditor sees full correction trail
 ```
+
+Controls: CFO approval, mandatory reason, reference to the original invoice and
+locked period, creator != approver, and an immutable audit trail. New journal
+entries are never backdated into a LOCKED period.
 
 ### Future Enhancements (Phase 2)
 - Automated period close checklist
@@ -838,6 +851,8 @@ Posted:   System Feb 5 11:00
 **Rules:**
 - CFO approval mandatory (always!)
 - Description mandatory
+- Original document date and adjusted period reference mandatory for prior-period corrections
+- Creator and approver must be different users (SOX segregation of duties)
 - Cannot post to LOCKED period
 - Cannot post to CLOSED period without CFO reopening
 - Immutable once posted

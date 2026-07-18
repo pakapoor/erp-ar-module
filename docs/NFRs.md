@@ -179,10 +179,12 @@ POST /payments
 X-Idempotency-Key: "tata-steel-P001-20240131"
 
 Server:
-Step 0: Check idempotency_keys table
-→ Key COMPLETED   → return cached response (no reprocess)
-→ Key PROCESSING  → return 409 "in progress"
-→ Key not found   → insert key with PROCESSING, proceed
+Step 0: Canonicalize the request and calculate its SHA-256 request_hash
+Step 1: Check idempotency_key by (tenant_id, endpoint, key)
+→ Key COMPLETED + same hash  → replay cached HTTP status and body
+→ Key PROCESSING + same hash → return 409 REQUEST_IN_PROGRESS
+→ Same key + different hash  → return 409 IDEMPOTENCY_KEY_REUSED
+→ Key not found              → insert PROCESSING and proceed
 
 Retry scenario:
 Request 1: key not found → process → mark COMPLETED
@@ -193,7 +195,7 @@ No duplicate payment! ✅
 **Atomic Transaction — Crash Safety:**
 ```
 BEGIN TRANSACTION
-  Step 0: Check + insert idempotency key
+  Step 0: Claim unique (tenant_id, endpoint, key) with request_hash
   Step 1: Record payment
   Step 2: Allocate to invoices
   Step 3: Generate GL journal entry
@@ -207,6 +209,11 @@ Server crashes at Step 4:
 → Client retries safely ✅
 → Idempotency key not COMPLETED → reprocessed safely ✅
 ```
+
+The idempotency claim and financial writes share one transaction. A short
+database lock timeout converts a concurrent claim into
+`409 REQUEST_IN_PROGRESS`; no separately committed lease or recovery worker is
+needed for these synchronous APIs.
 
 **Infrastructure:**
 ```

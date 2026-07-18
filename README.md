@@ -30,6 +30,7 @@ For interview/review, follow this order:
 - Complete GL journal entry generation
 - Invoice lifecycle state machine
 - AR aging report
+- Idempotent write APIs with cached retry responses
 - SOX-compliant audit trail
 - Period close controls
 

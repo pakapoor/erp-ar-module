@@ -49,17 +49,50 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION check_period_open()
 RETURNS TRIGGER AS $$
 DECLARE
+  period_record RECORD;
+BEGIN
+  -- Invoice creation remains DRAFT. Validate the document-date period only
+  -- when the invoice transitions to APPROVED and creates its GL entry.
+  IF NOT (OLD.status = 'DRAFT' AND NEW.status = 'APPROVED') THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT id, status INTO period_record
+  FROM accounting_period
+  WHERE tenant_id = NEW.tenant_id
+    AND entity_id = NEW.entity_id
+    AND start_date <= NEW.invoice_date
+    AND end_date >= NEW.invoice_date;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No accounting period exists for invoice date %', NEW.invoice_date;
+  END IF;
+
+  IF period_record.status <> 'OPEN' THEN
+    RAISE EXCEPTION 'Cannot post to % period. Status: %',
+      NEW.invoice_date, period_record.status;
+  END IF;
+
+  NEW.period_id := period_record.id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION check_journal_period_open()
+RETURNS TRIGGER AS $$
+DECLARE
   period_status VARCHAR;
 BEGIN
   SELECT status INTO period_status
   FROM accounting_period
-  WHERE tenant_id = NEW.tenant_id
-    AND start_date <= NEW.invoice_date
-    AND end_date >= NEW.invoice_date;
+  WHERE id = NEW.period_id
+    AND tenant_id = NEW.tenant_id
+    AND entity_id = NEW.entity_id
+    AND start_date <= NEW.entry_date
+    AND end_date >= NEW.entry_date;
 
-  IF period_status IN ('CLOSED', 'LOCKED') THEN
-    RAISE EXCEPTION 'Cannot post to % period. Status: %',
-      NEW.invoice_date, period_status;
+  IF NOT FOUND OR period_status <> 'OPEN' THEN
+    RAISE EXCEPTION 'Journal entry date % must belong to an OPEN period', NEW.entry_date;
   END IF;
   RETURN NEW;
 END;
@@ -253,14 +286,48 @@ CREATE TABLE accounting_period (
   closed_at         TIMESTAMP,
   locked_by         UUID REFERENCES app_user(id),
   locked_at         TIMESTAMP,
+  reopened_by       UUID REFERENCES app_user(id),
+  reopened_at       TIMESTAMP,
+  reopen_reason     TEXT,
   created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
 
   CONSTRAINT period_status_valid CHECK (
     status IN ('OPEN', 'CLOSED', 'LOCKED')
   ),
   CONSTRAINT period_dates_valid CHECK (start_date < end_date),
+  CONSTRAINT period_state_metadata_valid CHECK (
+    status = 'OPEN'
+    OR (status = 'CLOSED' AND closed_by IS NOT NULL AND closed_at IS NOT NULL)
+    OR (status = 'LOCKED' AND closed_by IS NOT NULL AND closed_at IS NOT NULL
+        AND locked_by IS NOT NULL AND locked_at IS NOT NULL)
+  ),
   CONSTRAINT period_unique UNIQUE (tenant_id, entity_id, start_date)
 );
+
+CREATE OR REPLACE FUNCTION check_period_transition()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF OLD.status = 'LOCKED' AND NEW.status IS DISTINCT FROM OLD.status THEN
+    RAISE EXCEPTION 'LOCKED accounting periods cannot be reopened or changed';
+  END IF;
+
+  IF OLD.status = 'OPEN' AND NEW.status = 'LOCKED' THEN
+    RAISE EXCEPTION 'An OPEN period must be CLOSED before it can be LOCKED';
+  END IF;
+
+  IF OLD.status = 'CLOSED' AND NEW.status = 'OPEN'
+     AND (NEW.reopened_by IS NULL OR NEW.reopened_at IS NULL
+          OR NULLIF(BTRIM(NEW.reopen_reason), '') IS NULL) THEN
+    RAISE EXCEPTION 'Reopening a CLOSED period requires actor, timestamp, and reason';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER accounting_period_transition_check
+  BEFORE UPDATE OF status ON accounting_period
+  FOR EACH ROW EXECUTE FUNCTION check_period_transition();
 
 CREATE INDEX idx_period_tenant ON accounting_period(tenant_id);
 CREATE INDEX idx_period_status ON accounting_period(tenant_id, entity_id, status);
@@ -348,7 +415,7 @@ CREATE POLICY tenant_isolation ON invoice
 
 -- Period close check
 CREATE TRIGGER invoice_period_check
-  BEFORE INSERT OR UPDATE ON invoice
+  BEFORE UPDATE OF status ON invoice
   FOR EACH ROW EXECUTE FUNCTION check_period_open();
 
 -- Audit trigger
@@ -419,7 +486,7 @@ CREATE TABLE payment (
   status                VARCHAR(30) NOT NULL DEFAULT 'PENDING',
   allocation_mode       VARCHAR(20) NOT NULL DEFAULT 'AUTO',  -- AUTO/MANUAL
   -- Idempotency
-  idempotency_key       VARCHAR(255) UNIQUE,
+  idempotency_key       VARCHAR(255),
   -- Audit
   created_by            UUID NOT NULL REFERENCES app_user(id),
   created_at            TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -438,14 +505,15 @@ CREATE TABLE payment (
   CONSTRAINT payment_unallocated_valid CHECK (
     unallocated_amount = amount - allocated_amount
   ),
-  CONSTRAINT payment_currency_valid CHECK (char_length(transaction_currency) = 3)
+  CONSTRAINT payment_currency_valid CHECK (char_length(transaction_currency) = 3),
+  CONSTRAINT payment_reference_unique UNIQUE (tenant_id, customer_id, payment_reference),
+  CONSTRAINT payment_idempotency_unique UNIQUE (tenant_id, idempotency_key)
 );
 
 CREATE INDEX idx_payment_tenant ON payment(tenant_id);
 CREATE INDEX idx_payment_customer ON payment(customer_id);
 CREATE INDEX idx_payment_date ON payment(tenant_id, payment_date);
 CREATE INDEX idx_payment_reference ON payment(tenant_id, payment_reference);
-CREATE INDEX idx_payment_idempotency ON payment(idempotency_key);
 
 ALTER TABLE payment ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON payment
@@ -492,19 +560,30 @@ CREATE TABLE journal_entry (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id         UUID NOT NULL REFERENCES tenant(id),
   entity_id         UUID NOT NULL REFERENCES entity(id),
-  period_id         UUID REFERENCES accounting_period(id),
-  reference_type    VARCHAR(50) NOT NULL,  -- INVOICE/PAYMENT/CREDIT_MEMO/MANUAL
+  period_id         UUID NOT NULL REFERENCES accounting_period(id),
+  reference_type    VARCHAR(50) NOT NULL,  -- INVOICE/PAYMENT/CREDIT_MEMO/MANUAL/ADJUSTMENT
   reference_id      UUID NOT NULL,
-  entry_date        DATE NOT NULL DEFAULT CURRENT_DATE,
+  document_date     DATE NOT NULL,
+  entry_date        DATE NOT NULL DEFAULT CURRENT_DATE, -- GL posting date
+  adjusts_period_id UUID REFERENCES accounting_period(id),
+  adjustment_reason TEXT,
   description       TEXT NOT NULL,
   currency          CHAR(3) NOT NULL,
   is_reversed       BOOLEAN NOT NULL DEFAULT FALSE,
   reversed_by       UUID REFERENCES journal_entry(id),
   created_by        UUID NOT NULL REFERENCES app_user(id),
+  approved_by       UUID REFERENCES app_user(id),
   created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
 
   CONSTRAINT je_reference_type_valid CHECK (
-    reference_type IN ('INVOICE', 'PAYMENT', 'CREDIT_MEMO', 'WRITE_OFF', 'MANUAL', 'FX_REVALUATION')
+    reference_type IN ('INVOICE', 'PAYMENT', 'CREDIT_MEMO', 'WRITE_OFF', 'MANUAL', 'PRIOR_PERIOD_ADJUSTMENT', 'FX_REVALUATION')
+  ),
+  CONSTRAINT je_prior_period_adjustment_valid CHECK (
+    reference_type <> 'PRIOR_PERIOD_ADJUSTMENT'
+    OR (adjusts_period_id IS NOT NULL
+        AND NULLIF(BTRIM(adjustment_reason), '') IS NOT NULL
+        AND approved_by IS NOT NULL
+        AND created_by <> approved_by)
   )
   -- NOTE: No UPDATE/DELETE allowed. Immutable by application policy.
   -- Corrections via reversing journal entries only.
@@ -518,6 +597,10 @@ CREATE INDEX idx_je_date ON journal_entry(tenant_id, entry_date);
 ALTER TABLE journal_entry ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON journal_entry
   USING (tenant_id = current_setting('app.tenant_id')::uuid);
+
+CREATE TRIGGER journal_entry_period_check
+  BEFORE INSERT ON journal_entry
+  FOR EACH ROW EXECUTE FUNCTION check_journal_period_open();
 
 -- ============================================================
 -- TABLE 13: JOURNAL ENTRY LINE
@@ -634,24 +717,44 @@ CREATE INDEX idx_audit_changed_by ON audit_log(changed_by);
 
 -- ============================================================
 -- IDEMPOTENCY KEYS TABLE
--- Prevents duplicate payment processing
+-- Prevents duplicate processing for all synchronous write APIs
 -- ============================================================
 CREATE TABLE idempotency_key (
-  key               VARCHAR(255) PRIMARY KEY,
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id         UUID NOT NULL REFERENCES tenant(id),
   endpoint          VARCHAR(100) NOT NULL,
+  key               VARCHAR(255) NOT NULL,
+  request_hash      VARCHAR(64) NOT NULL,
   status            VARCHAR(20) NOT NULL DEFAULT 'PROCESSING',
+  response_status   SMALLINT,
   response_body     JSONB,
   created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMP NOT NULL DEFAULT NOW(),
   expires_at        TIMESTAMP NOT NULL DEFAULT NOW() + INTERVAL '24 hours',
 
+  CONSTRAINT idempotency_scope_unique UNIQUE (tenant_id, endpoint, key),
+  CONSTRAINT idempotency_request_hash_valid CHECK (request_hash ~ '^[0-9a-f]{64}$'),
   CONSTRAINT idempotency_status_valid CHECK (
-    status IN ('PROCESSING', 'COMPLETED', 'FAILED')
+    status IN ('PROCESSING', 'COMPLETED')
+  ),
+  CONSTRAINT idempotency_response_status_valid CHECK (
+    response_status IS NULL OR response_status BETWEEN 100 AND 599
+  ),
+  CONSTRAINT idempotency_completion_valid CHECK (
+    (status = 'PROCESSING' AND response_status IS NULL AND response_body IS NULL)
+    OR (status = 'COMPLETED' AND response_status IS NOT NULL AND response_body IS NOT NULL)
+  ),
+  CONSTRAINT idempotency_expiry_valid CHECK (
+    expires_at > created_at
   )
 );
 
 CREATE INDEX idx_idempotency_tenant ON idempotency_key(tenant_id);
 CREATE INDEX idx_idempotency_expires ON idempotency_key(expires_at);
+
+ALTER TABLE idempotency_key ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON idempotency_key
+  USING (tenant_id = current_setting('app.tenant_id')::uuid);
 
 -- ============================================================
 -- MATERIALIZED VIEW: AR AGING

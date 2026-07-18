@@ -37,14 +37,21 @@ If-Match:            <version>                  ← concurrent write operations
 - New user action = new UUID
 - Never use timestamps (midnight problem!)
 - Expires 24 hours
-- Stored in idempotency_keys table
+- Stored in the idempotency_key table
 - Returned in POST responses for audit trail
+- Scoped by tenant_id + endpoint + key
+- SHA-256 request hash detects reuse with a different payload
 
 Flow:
 User clicks button → client generates UUID → stores in memory
 Network timeout   → client retries with SAME UUID
 Server sees key   → already COMPLETED → returns cached response
 No duplicate processing!
+
+Server outcomes:
+→ COMPLETED + same hash  → replay original HTTP status and response body
+→ PROCESSING + same hash → 409 REQUEST_IN_PROGRESS
+→ same key + new hash    → 409 IDEMPOTENCY_KEY_REUSED
 ```
 
 ### Optimistic Locking — ABA Prevention
@@ -101,7 +108,7 @@ status, balance, payment allocation, and credit memo changes.
 401 → unauthorized (invalid/expired JWT)
 403 → forbidden (wrong role or SOX violation)
 404 → not found
-409 → conflict (version mismatch / duplicate idempotency key)
+409 → conflict (version mismatch / request in progress / idempotency key misuse)
 422 → unprocessable (business rule violation)
 423 → locked (accounting period closed/locked)
 500 → server error
@@ -234,7 +241,8 @@ due_date     ← calculated: invoice_date + payment_terms
 400 → missing required fields (customer_id, line_items)
 403 → user lacks invoice_creator role
 404 → customer_id not found
-409 → duplicate idempotency key
+409 → REQUEST_IN_PROGRESS (same request is still processing)
+409 → IDEMPOTENCY_KEY_REUSED (same key, different request payload)
 422 → customer exceeded credit limit
 422 → invalid tax_jurisdiction
 422 → line item quantity or price <= 0
@@ -397,7 +405,7 @@ Content-Type: application/json
 3.  Validate invoice status = DRAFT
 4.  Check approver role (invoice_approver or cfo)
 5.  Check SOX: approver_id != created_by
-6.  Check accounting period is OPEN
+6.  Find the tenant + entity period containing invoice_date; require OPEN
 7.  Generate GL journal entry:
     Debit:  1200 AR       174000
     Credit: 3100 Revenue  174000
@@ -431,14 +439,21 @@ Full details available via GET /invoices/{id} with new version.
 403 → approver same as creator (SOX violation!)
       "Creator cannot approve their own invoice"
 404 → invoice not found
-409 → duplicate idempotency key
+409 → REQUEST_IN_PROGRESS (same request is still processing)
+409 → IDEMPOTENCY_KEY_REUSED (same key, different request payload)
 409 → If-Match version mismatch (ABA problem!)
       "Invoice was modified since last viewed. Please refresh."
 422 → invoice not in DRAFT status
       "Cannot approve invoice with status: APPROVED"
 423 → accounting period CLOSED or LOCKED
-      "January 2024 is locked. Cannot post to closed period."
+      CLOSED: CFO may reopen with a mandatory audited reason, then retry
+      LOCKED: never reopen; use a CFO-approved current-period adjustment
 ```
+
+`invoice_date` is the business document date. For normal approval, the journal
+entry posts to that date's OPEN period. A prior-period adjustment preserves the
+original document date but uses an `entry_date` in the current OPEN period; the
+system never silently shifts or backdates an entry.
 
 ### Future Enhancements (Phase 2)
 
@@ -531,9 +546,25 @@ Currency:
 → if missing → use most recent available rate + flag in response
 
 Duplicate prevention:
-→ idempotency key not already COMPLETED
-→ payment_reference not duplicate for same customer
+→ COMPLETED key + same request hash replays cached 201 response
+→ PROCESSING key + same request hash returns 409 REQUEST_IN_PROGRESS
+→ same key + different request hash returns 409 IDEMPOTENCY_KEY_REUSED
+→ payment_reference unique within tenant + customer
    (prevents double RTGS processing)
+```
+
+### Atomic Operations (ONE DB transaction)
+
+```
+1. Claim unique (tenant_id, endpoint, idempotency_key) with request_hash
+2. Create payment and allocate invoices under serializable isolation
+3. Generate balanced GL journal entry
+4. Update invoice balances, statuses, and versions
+5. Store original HTTP status + response; mark key COMPLETED
+6. Commit everything together
+
+Crash before commit → all changes, including PROCESSING key, roll back
+Crash after commit  → retry replays cached response
 ```
 
 ### Response — HTTP 201 Created
@@ -625,7 +656,8 @@ Credit: 4300 FX Gain/Loss   3000  ← difference
 403 → user lacks payment_recorder role
 404 → customer_id not found
 404 → invoice_id not found (manual mode)
-409 → duplicate idempotency key
+409 → REQUEST_IN_PROGRESS (same request is still processing)
+409 → IDEMPOTENCY_KEY_REUSED (same key, different request payload)
 409 → duplicate payment_reference for same customer
 422 → amount <= 0
 422 → allocation exceeds invoice outstanding balance
@@ -927,6 +959,7 @@ POST /invoices/{id}/credit-memos  ← FR5: create credit memo
 POST /invoices/{id}/writeoff      ← FR6: write off invoice
 POST /journal-entries/manual      ← FR15: manual journal entry
 POST /periods/{id}/close          ← FR13: close accounting period
+POST /periods/{id}/reopen         ← FR13: CFO reopens CLOSED period with reason
 POST /periods/{id}/lock           ← FR13: lock accounting period
 POST /users                       ← FR16: create user
 POST /users/{id}/roles            ← FR16: assign role
