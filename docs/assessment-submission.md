@@ -6,7 +6,13 @@ This prototype implements the six APIs required by the assessment and demonstrat
 
 The architecture is a modular monolith implemented with FastAPI and PostgreSQL behind an Envoy L7 gateway. This keeps invoice, payment, allocation, audit, GL, and delivery-outbox writes within ACID transaction boundaries. Envoy rejects invalid JWTs early, injects trace IDs, and is the only public AR entry point; the internal FastAPI application independently re-validates JWTs. The application runs with a delivery/JWKS stub plus an outbox worker under Docker Compose.
 
-Production delivery adapters (Email/EDI/IRP), credit memos, void/reissue, write-off, intercompany elimination, full FX processing, manual journals, and period-management APIs are designed but not represented as completed prototype features. The durable delivery outbox, retrying worker, and console stub are implemented.
+Production delivery adapters (Email/EDI/IRP), credit memos, void/reissue,
+write-off, intercompany elimination, manual journals, and period-management APIs
+are designed but not represented as completed prototype features. Full FX
+processing has an approved detailed design and is `IN PROGRESS`; its migration,
+pg_cron schedule and live ECB worker are implemented, but it must not be claimed
+complete until the invoice/payment accounting path and end-to-end tests pass.
+The durable delivery outbox, retrying worker, and console stub are implemented.
 
 ## 2. Data Model and Architecture
 
@@ -147,4 +153,5 @@ The project was expanded beyond the original 3–4 hour timebox as an interactiv
 - RLS needs a non-owner runtime role plus `FORCE ROW LEVEL SECURITY` for production-grade defense in depth.
 - Journal immutability and aggregate balancing need database privilege/constraint enforcement.
 - The custom PostgreSQL image loads pg_cron. One job owned by the `postgres` system database refreshes `erp_db.ar_aging` concurrently every five minutes; the integration test also refreshes explicitly for deterministic assertions.
-- Full multi-currency, intercompany, amendment, and period-management workflows are deferred.
+- Multi-currency implementation is in progress; intercompany, amendment, and
+  period-management workflows are deferred.

@@ -489,6 +489,20 @@ With async bulk + queue:
 - CQRS for reporting queries
 - Auto-scaling based on load metrics
 
+### FX Provider Isolation and Scheduling
+
+Financial request latency and availability must not depend on a synchronous
+market-data call. pg_cron inserts one weekday `fx_import_job`; a separately
+scalable worker claims it with `FOR UPDATE SKIP LOCKED`, calls the ECB API with
+bounded timeouts/retries, validates the batch, and stores approved rates.
+
+Invoice/payment APIs read PostgreSQL only. They fail closed when no approved
+rate exists within three calendar days. Deterministic integration tests use a
+recorded ECB-shaped response; a separate optional contract smoke test detects
+live provider changes without making the main suite flaky. Monitoring covers
+provider-date freshness, import lag, retries and DEAD jobs. See
+[FX Rate Ingestion and Multi-Currency Design](fx-rate-design.md).
+
 ---
 
 ## NFR7 — Durability

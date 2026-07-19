@@ -183,7 +183,15 @@ total_amount ← calculated by server (sum of line items)
 due_date     ← calculated: invoice_date + payment_terms
                server owns all financial date calculations
                client cannot manipulate due dates
+base_currency    ← entity.currency
+exchange_rate_id ← approved rate selected for invoice_date
+base amounts     ← transaction amounts × locked exchange rate
 ```
+
+For INR, the conversion rate is 1. For USD, EUR, CNY, GBP, JPY, CHF or CAD,
+the server selects the latest approved rate on/before `invoice_date`, no more
+than three calendar days old. A missing/stale rate returns
+`503 FX_RATE_UNAVAILABLE`; it never silently falls back to 1.0.
 
 ### Response — HTTP 201 Created
 
@@ -200,6 +208,10 @@ due_date     ← calculated: invoice_date + payment_terms
   "due_date": "2024-02-14",
   "payment_terms": "NET30",
   "currency": "INR",
+  "base_currency": "INR",
+  "exchange_rate_id": null,
+  "exchange_rate_used": 1.0,
+  "exchange_rate_date": "2024-01-15",
   "line_items": [
     {
       "id": "uuid-line-1",
@@ -246,6 +258,8 @@ due_date     ← calculated: invoice_date + payment_terms
 422 → customer exceeded credit limit
 422 → invalid tax_jurisdiction
 422 → line item quantity or price <= 0
+422 → unsupported currency
+503 → FX_RATE_UNAVAILABLE (no approved rate within three calendar days)
 ```
 
 ---
@@ -550,8 +564,10 @@ Amount:
 → no allocation exceeds invoice balance
 
 Currency:
-→ exchange rate exists for payment_date
-→ if missing → use most recent available rate + flag in response
+→ currency is one of INR, USD, EUR, CNY, GBP, JPY, CHF, CAD
+→ every allocated invoice has the same transaction currency as the payment
+→ latest approved rate on/before payment_date is no more than 3 days old
+→ missing/stale foreign rate rejects the complete transaction
 
 Duplicate prevention:
 → COMPLETED key + same request hash replays cached 201 response
@@ -636,7 +652,8 @@ Exchange rate warning example (rate missing for payment date):
 {
   "exchange_rate_used": 83.00,
   "exchange_rate_date": "2024-01-30",
-  "exchange_rate_warning": "Rate from 2024-01-30 used (2024-01-31 not available)",
+  "exchange_rate_id": "uuid-approved-rate",
+  "exchange_rate_warning": "Prior-business-day ECB rate from 2024-01-30 used",
   ...
 }
 ```
@@ -658,7 +675,7 @@ Credit: 1200 AR               300000
 Credit: 2100 Customer Credit  100000  ← unapplied liability
 ```
 
-**FX payment GL entries (if currency differs):**
+**FX payment GL entries (same foreign transaction currency, different date rates):**
 ```
 Debit:  1100 Cash          86000  ← actual cash (at payment rate)
 Credit: 1200 AR            83000  ← original invoice amount (at invoice rate)
@@ -680,8 +697,14 @@ Credit: 4300 FX Gain/Loss   3000  ← difference
 422 → sum of manual allocations > payment amount
 422 → invoice not in payable status (DRAFT/VOID/WRITTEN_OFF)
 422 → no open invoices found (auto mode)
-503 → no current or prior exchange rate is available
+422 → payment and allocated invoice currencies differ (V1)
+503 → no approved exchange rate within three calendar days
 ```
+
+The provider is never called synchronously by API1/API4. pg_cron creates a
+durable import request and a separate FX worker calls ECB, derives INR cross
+rates and stores approved immutable rows. Full component, persistence and test
+contracts are in [FX Rate Ingestion and Multi-Currency Design](fx-rate-design.md).
 
 ### Future Enhancements (Phase 2)
 

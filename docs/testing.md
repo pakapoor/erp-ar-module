@@ -14,7 +14,7 @@ docker compose ps
 The equivalent manual start is `docker compose up -d --build`, but the
 deployment script also performs migration detection and health verification.
 
-Expected: five services are running:
+Expected: six services are running:
 
 | Service | Container | Expected state | Purpose |
 |---|---|---|---|
@@ -23,6 +23,7 @@ Expected: five services are running:
 | `db` | `erp_db` | Up (healthy) | PostgreSQL with pg_cron on port 5432 |
 | `stub` | `erp_stub` | Up | JWKS and delivery console stub on port 9000 |
 | `delivery_worker` | `erp_delivery_worker` | Up | Transactional-outbox consumer |
+| `fx_rate_worker` | `erp_fx_rate_worker` | Up | ECB reference-rate importer |
 
 Quick health checks:
 
@@ -140,7 +141,7 @@ Expected stub output includes the same delivery ID and invoice ID, the customer,
 amount, currency, and due date. Matching IDs demonstrate the stable downstream
 idempotency key.
 
-## 5. Verify pg_cron aging refresh
+## 5. Verify pg_cron schedules
 
 The scheduler metadata deliberately lives in the `postgres` system database;
 the job targets the application database `erp_db`.
@@ -156,9 +157,15 @@ Expected:
 
 - `shared_preload_libraries` contains `pg_cron`
 - one active job named `refresh-ar-aging-every-5-minutes`
-- schedule `*/5 * * * *`
-- target database `erp_db`
-- command `REFRESH MATERIALIZED VIEW CONCURRENTLY ar_aging`
+- one active job named `enqueue-ecb-fx-import-weekdays`
+- schedules `*/5 * * * *` and `30 15 * * 1-5` respectively
+- both target database `erp_db`
+- the first command refreshes `ar_aging` concurrently; the second idempotently
+  inserts one daily `fx_import_job`
+
+The FX worker claims the import, validates one coherent ECB batch, derives
+foreign→INR pairs, and stores tenant-approved immutable rows. B1 remains
+`IN PROGRESS` until invoice/payment accounting and deterministic FX tests pass.
 
 Execution history:
 
@@ -166,6 +173,10 @@ Execution history:
 docker compose exec -T db psql -U erp_user -d postgres -P pager=off -c "
 SELECT status, start_time, end_time, return_message
 FROM cron.job_run_details
+WHERE jobid = (
+  SELECT jobid FROM cron.job
+  WHERE jobname = 'refresh-ar-aging-every-5-minutes'
+)
 ORDER BY runid DESC
 LIMIT 5;
 "

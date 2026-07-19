@@ -5,6 +5,7 @@ from src.models.models import (
     Customer,
     GLAccount,
     AccountingPeriod,
+    FXImportJob,
     ExchangeRate,
     Invoice,
     InvoiceLineItem,

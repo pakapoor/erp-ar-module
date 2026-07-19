@@ -588,18 +588,30 @@ ERP: WHERE tenant_id=X AND entity_id=Y
 
 ## FR11 — Multi-currency
 
-System must support invoicing in any currency. Exchange rates are fetched daily from a rate provider and stored in the database. Invoice stores both transaction currency amount and base currency (tenant reporting currency) amount. FX gain/loss is automatically calculated and recorded when payment currency differs from invoice currency.
+**Implementation status:** `IN PROGRESS` — ingestion migration, daily schedule,
+live ECB worker and deterministic feed tests are complete; invoice/payment FX
+accounting and end-to-end tests remain. See
+[FX Rate Ingestion and Multi-Currency Design](fx-rate-design.md).
+
+V1 supports INR, USD, EUR, CNY, GBP, JPY, CHF and CAD. Exchange rates are
+fetched after the ECB weekday publication and stored in PostgreSQL. An invoice
+stores both transaction-currency and entity-base-currency amounts. Realized FX
+gain/loss is calculated when the payment-date rate differs from the locked
+invoice-date rate. V1 requires the payment and invoice to use the same
+transaction currency; cross-currency settlement is V2.
 
 **Exchange Rate Storage:**
 ```
-Daily job (2am):
-Fetch from XE.com/Bloomberg/RBI
-Store in exchange_rates table:
+pg_cron (21:00 IST weekdays):
+Insert one PENDING fx_import_job
+FX worker fetches official ECB EUR reference quotes
+Worker derives and stores tenant-approved foreign→INR rates:
 
 from_currency:  USD
 to_currency:    INR
 rate:           83.00
 effective_date: 2024-01-01
+source:         ECB_DAILY_REFERENCE
 ```
 
 **Invoice Amounts (both stored):**
@@ -646,22 +658,24 @@ Net:      +₹3,000
 
 Missing Exchange Rate Handling:
 If rate not found for invoice date:
-→ Use most recent available rate
-→ Flag invoice for manual review
-→ Never block invoice creation
+→ Use latest APPROVED prior-business-day rate only when <= 3 days old
+→ Disclose exact rate ID, provider date and prior-date warning
+→ If missing/older than 3 days, reject with FX_RATE_UNAVAILABLE
+→ Never substitute 1.0 for a foreign-currency pair
 
 Example:
 Invoice date: Jan 1 (Sunday, markets closed, no rate available)
 System uses:  Dec 31 rate (most recent available)
-Flags:        "Rate from Dec 31 used — manual review recommended"
-Audit trail:  Records which rate was used and why
+Response:     "Prior-business-day rate from Dec 31 used"
+Audit trail:  Records immutable rate ID, value, source date and reason
 
 ### Future Enhancements (Phase 2)
 - Multiple exchange rate types (spot/forward/average)
 - Hedging support
-- Currency revaluation at period end
-- Exchange rate audit trail
-- Manual rate override (with CFO approval)
+- Unrealized currency revaluation and reversal at period end
+- Cross-currency settlement (for example EUR payment against USD invoice)
+- Manual rate-entry and CFO-approval API; immutable supersession is already part
+  of the V1 data design
 
 ---
 

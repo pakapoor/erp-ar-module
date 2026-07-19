@@ -20,6 +20,7 @@ For interview/review, follow this order:
 - [Functional Requirements](docs/FRs.md)
 - [Non Functional Requirements](docs/NFRs.md)
 - [Assessment Requirements Traceability](docs/requirements-traceability.md)
+- [FX Rate and Multi-Currency Design](docs/fx-rate-design.md)
 - [High Level Design](docs/high-level-design.md)
 - [Data Model](docs/data-model.md)
 - [API Design](docs/api-design.md)
@@ -43,10 +44,14 @@ For interview/review, follow this order:
 - Database-triggered audit trail with actor context
 - Application and database period-posting controls
 - Transactional invoice-delivery outbox with retrying Docker worker
+- pg_cron-scheduled ECB rate ingestion with durable jobs, provenance and seven
+  approved foreign→INR pairs
 
 Designed but deferred from the required prototype: production email/EDI/IRP
 delivery adapters, credit memos, write-offs, void/reissue, intercompany
-elimination, full FX processing, manual journals, and period-management APIs.
+elimination, manual journals, and period-management APIs. Full FX processing is
+currently `IN PROGRESS`; its approved scope and acceptance tests are documented
+in [FX Rate and Multi-Currency Design](docs/fx-rate-design.md).
 
 ## API Endpoints
 | Method | Endpoint | Description |
@@ -85,3 +90,59 @@ submission, replace the placeholders below with your actual approximate time:
 - Experience showcase: `[candidate to provide]`
 
 ## Project Structure
+
+```text
+erp-ar-module/
+├── README.md                    Interview entry point and project guide
+├── Dockerfile                   FastAPI and worker runtime image
+├── docker-compose.yml           Local six-service deployment
+├── deploy.sh                    Safe build, migration, startup and verification
+├── test_api.sh                  Repeatable API/control integration suite
+├── gateway/
+│   └── envoy.yaml               Public L7 gateway, JWT, tracing and rate limits
+├── database/
+│   └── Dockerfile               PostgreSQL 16 image with pg_cron
+├── delivery_stub/
+│   ├── Dockerfile
+│   └── stub.py                  JWKS and invoice-delivery mock
+├── migrations/
+│   ├── 001_initial_schema.sql
+│   ├── 002_add_ar_aging_bucket_counts.sql
+│   ├── 003_setup_pg_cron.sh
+│   ├── 004_delivery_outbox.sql
+│   ├── 005_entity_scoped_idempotency.sql
+│   └── 006_fx_rate_ingestion.sql
+├── src/
+│   ├── main.py                  FastAPI composition and trace middleware
+│   ├── auth.py                  JWT/JWKS validation and RBAC
+│   ├── database.py              Async SQLAlchemy session setup
+│   ├── schemas.py               API request/response contracts
+│   ├── seed_data.py             Deterministic demo master data
+│   ├── delivery_worker.py       Transactional-outbox delivery consumer
+│   ├── fx_rate_worker.py        Scheduled ECB import and INR-rate derivation
+│   ├── tests/
+│   │   └── test_fx_rate_worker.py  Deterministic ECB parser/derivation tests
+│   ├── models/
+│   │   ├── __init__.py
+│   │   └── models.py            ORM financial and operational models
+│   └── routers/
+│       ├── invoices.py          Create, retrieve and approve invoices
+│       ├── payments.py          Record and allocate receipts
+│       ├── aging.py             Customer aging report
+│       ├── journal_entries.py   Invoice journal retrieval and pagination
+│       └── health.py            Database, MV and AR/GL reconciliation health
+└── docs/
+    ├── requirements-traceability.md  Living assessment coverage matrix
+    ├── high-level-design.md           Component/API architecture
+    ├── fx-rate-design.md              Approved multi-currency design
+    ├── data-model.md                  ER model and schema decisions
+    ├── api-design.md                  Endpoint contracts and errors
+    ├── FRs.md / NFRs.md               Functional/non-functional design
+    ├── tradeoffs.md                   Decision record
+    ├── financial-controls.md          Accounting/SOX/operations analysis
+    ├── testing.md / deployment.md     Reproduction and expected results
+    └── assessment-submission.md       Consolidated assessment narrative
+```
+
+Keep this tree synchronized whenever a service, migration, major module, or
+design document is added or removed.

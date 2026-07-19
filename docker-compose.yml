@@ -79,5 +79,24 @@ services:
     command: python -m src.delivery_worker
     restart: unless-stopped
 
+  fx_rate_worker:
+    build: .
+    container_name: erp_fx_rate_worker
+    environment:
+      DATABASE_URL: postgresql://erp_user:erp_password@db:5432/erp_db
+      FX_PROVIDER_URL: https://data-api.ecb.europa.eu/service/data/EXR/D.CAD+CHF+CNY+GBP+INR+JPY+USD.EUR.SP00.A
+      FX_SUPPORTED_CURRENCIES: INR,USD,EUR,CNY,GBP,JPY,CHF,CAD
+      FX_BASE_CURRENCY: INR
+      FX_ENQUEUE_ON_STARTUP: "true"
+      FX_POLL_INTERVAL_SECONDS: 10
+      FX_MAX_RATE_AGE_DAYS: 3
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+    command: python -m src.fx_rate_worker
+    restart: unless-stopped
+
 volumes:
   postgres_data:

@@ -38,6 +38,7 @@
 | AR Aging (materialized view) | Current derived snapshot by tenant, entity, and customer; refreshed every 5 minutes |
 | Idempotency Key | Tenant- and endpoint-scoped write claim with request hash and cached response |
 | Delivery Outbox | Durable invoice-delivery event committed atomically with approval and claimed by workers |
+| FX Import Job | Durable pg_cron request claimed by the FX worker; retry and provenance boundary |
 
 ---
 
@@ -57,7 +58,15 @@
 
 Full schema begins in [migrations/001_initial_schema.sql](../migrations/001_initial_schema.sql);
 the delivery outbox is added by
-[migrations/004_delivery_outbox.sql](../migrations/004_delivery_outbox.sql).
+[migrations/004_delivery_outbox.sql](../migrations/004_delivery_outbox.sql), and
+the FX import/provenance foundation by
+[migrations/006_fx_rate_ingestion.sql](../migrations/006_fx_rate_ingestion.sql).
+
+The approved in-progress FX extension is specified in
+[FX Rate Ingestion and Multi-Currency Design](fx-rate-design.md). Migration 006
+implements `fx_import_job`, rate provenance/approval fields, immutable
+supersession, and transaction-to-rate references. Financial API integration
+remains in progress.
 
 Key design decisions in the schema:
 - UUID primary keys on all tables
@@ -74,6 +83,9 @@ Key design decisions in the schema:
   claims, retry state, and a stable downstream idempotency identifier
 - AR Aging as a current-only materialized view — refreshed every 5 minutes;
   historical reporting requires event reconstruction or persisted snapshots
+- Foreign-currency documents snapshot both the approved rate ID and numeric
+  rate; approved rate corrections insert a superseding row rather than changing
+  historical transactions (storage implemented; API usage in progress)
 
 ---
 

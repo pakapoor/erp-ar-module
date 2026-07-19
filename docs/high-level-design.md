@@ -3,6 +3,7 @@
 ## Table of Contents
 - [Overview](#overview)
 - [HLD Diagram](#hld-diagram)
+- [FX Rate Ingestion](#fx-rate-ingestion)
 - [API Flow Details](#api-flow-details)
 - [NFR Layer](#nfr-layer)
 
@@ -18,6 +19,9 @@ Client → Envoy L7 Gateway (:8000) → AR Application (FastAPI, internal :8080)
 Asynchronous delivery flow:
 AR approval transaction → PostgreSQL delivery_outbox → Outbox Worker → Delivery Stub
 
+FX ingestion flow:
+pg_cron → fx_import_job → FX Rate Worker → ECB Data API → exchange_rate
+
 Key decisions:
 - Envoy L7 Gateway: validates JWT signature/expiry/key ID, normalizes paths,
   applies a per-instance local rate limit, injects a trace ID, and forwards the
@@ -31,6 +35,9 @@ Key decisions:
 - Period close: enforced at both app and DB trigger level
 - pg_cron: runs once inside PostgreSQL and refreshes the aging MV concurrently
   every 5 minutes; readers retain the previous complete snapshot during refresh
+- FX rates: pg_cron enqueues one weekday import; a separate worker owns outbound
+  HTTPS, validates ECB reference data, and stores immutable tenant-approved INR
+  cross rates. Financial APIs never call the provider synchronously.
 
 ---
 
@@ -52,12 +59,34 @@ API flows shown in diagram:
 
 ---
 
+## FX Rate Ingestion
+
+```mermaid
+flowchart LR
+    C["pg_cron"] --> J["fx_import_job"]
+    W["FX Rate Worker"] --> J
+    W --> E["ECB Data API"]
+    W --> R["Approved exchange_rate"]
+    R --> A["Invoice and Payment APIs"]
+    A --> G["INR base-currency GL"]
+```
+
+The approved V1 scope supports INR, USD, EUR, CNY, GBP, JPY, CHF and CAD.
+Invoice and payment transactions snapshot the selected rate. Missing/stale
+rates fail closed; a payment must use the invoice transaction currency. See
+[FX Rate Ingestion and Multi-Currency Design](fx-rate-design.md) for rate
+derivation, posting examples, failure rules and test acceptance criteria.
+
+---
+
 ## API Flow Details
 
 ### ① POST /invoices (FR1)
 - Required role: invoice_creator
 - X-Idempotency-Key required
 - Server calculates: subtotal, tax, total, due_date (never trust client)
+- Foreign currency: locks the latest approved invoice-date rate (maximum three
+  days old), stores transaction/base amounts, and rejects unavailable rates
 - Credit limit check before creation
 - ACID transaction: invoice + line_items saved atomically
 - Audit trigger fires automatically (DB level)
@@ -79,9 +108,9 @@ API flows shown in diagram:
 - SOX check: approver_id must differ from created_by (enforced in code + DB constraint)
 - Period close check: invoice_date period must be OPEN (enforced at app + DB trigger)
 - GL entries generated atomically in same ACID transaction:
-  - Debit  Accounts Receivable  total_amount
-  - Credit Sales Revenue        subtotal_amount
-  - Credit Tax Payable          tax_amount
+  - Debit  Accounts Receivable  base total amount
+  - Credit Sales Revenue        base subtotal amount
+  - Credit Tax Payable          base tax amount
 - PENDING delivery_outbox event saved in that same transaction
 - Separate worker claims events with FOR UPDATE SKIP LOCKED, calls the delivery
   stub after commit, retries failures, and records sent_at after success
@@ -93,6 +122,9 @@ API flows shown in diagram:
 - X-Idempotency-Key required
 - Serializable isolation level (strictest) — prevents double allocation
 - Allocation modes: AUTO (FIFO oldest first) or MANUAL (client specifies)
+- V1 foreign-currency allocation requires payment and invoices to use the same
+  transaction currency; Cash uses the payment-date rate, AR uses each locked
+  invoice rate, and the difference posts to realized FX Gain/Loss
 - One GL entry for entire payment (not per invoice):
   - Debit  Cash  total_payment_amount
   - Credit AR    allocated_amount

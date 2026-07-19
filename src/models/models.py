@@ -163,6 +163,33 @@ class AccountingPeriod(Base):
 
 
 # ============================================================
+# FX IMPORT JOB
+# ============================================================
+class FXImportJob(Base):
+    __tablename__ = "fx_import_job"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False, default="ECB")
+    requested_date: Mapped[date] = mapped_column(Date, nullable=False)
+    provider_effective_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    raw_response_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("provider", "requested_date", name="fx_import_job_provider_date_unique"),
+        Index("idx_fx_import_job_claim", "status", "next_attempt_at", "created_at"),
+    )
+
+
+# ============================================================
 # EXCHANGE RATE
 # ============================================================
 class ExchangeRate(Base):
@@ -174,13 +201,45 @@ class ExchangeRate(Base):
     to_currency: Mapped[str] = mapped_column(String(3), nullable=False)
     rate: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
     effective_date: Mapped[date] = mapped_column(Date, nullable=False)
-    source: Mapped[str] = mapped_column(String(50), nullable=False, default="XE")
+    source: Mapped[str] = mapped_column(String(50), nullable=False, default="ECB")
+    rate_type: Mapped[str] = mapped_column(String(30), nullable=False, default="DAILY_REFERENCE")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    provider_effective_date: Mapped[date] = mapped_column(Date, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    raw_quote_currency: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
+    raw_quote_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8), nullable=True)
+    is_derived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    raw_response_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    import_job_id: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("fx_import_job.id"), nullable=True
+    )
+    is_manual_override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    approved_by: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("app_user.id"), nullable=True
+    )
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    supersedes_rate_id: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("exchange_rate.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "from_currency", "to_currency", "effective_date",
-                         name="exchange_rate_unique"),
-        Index("idx_exchange_rate_lookup", "tenant_id", "from_currency", "to_currency", "effective_date"),
+        Index(
+            "idx_exchange_rate_lookup",
+            "tenant_id", "from_currency", "to_currency", "rate_type", "effective_date",
+        ),
+        Index(
+            "uq_exchange_rate_approved",
+            "tenant_id", "from_currency", "to_currency", "effective_date", "rate_type",
+            unique=True,
+            postgresql_where=text("status = 'APPROVED'"),
+        ),
+        Index(
+            "uq_exchange_rate_import_pair",
+            "import_job_id", "tenant_id", "from_currency", "to_currency",
+            unique=True,
+            postgresql_where=text("import_job_id IS NOT NULL"),
+        ),
     )
 
 
@@ -203,6 +262,9 @@ class Invoice(Base):
 
     # Currency
     transaction_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    exchange_rate_id: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("exchange_rate.id"), nullable=True
+    )
     exchange_rate: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False, default=1)
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
 
@@ -216,6 +278,7 @@ class Invoice(Base):
     base_subtotal_amount: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, default=0)
     base_tax_amount: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, default=0)
     base_total_amount: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, default=0)
+    base_balance_amount: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, default=0)
 
     # Dates
     invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -298,6 +361,9 @@ class Payment(Base):
 
     # Currency
     transaction_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    exchange_rate_id: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("exchange_rate.id"), nullable=True
+    )
     exchange_rate: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False, default=1)
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
 
@@ -306,6 +372,8 @@ class Payment(Base):
     base_amount: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
     allocated_amount: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, default=0)
     unallocated_amount: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    base_allocated_amount: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, default=0)
+    base_unallocated_amount: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, default=0)
 
     payment_method: Mapped[str] = mapped_column(String(50), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING")
@@ -338,6 +406,8 @@ class PaymentAllocation(Base):
     payment_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("payment.id"), nullable=False)
     invoice_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("invoice.id"), nullable=False)
     amount_allocated: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    base_payment_amount: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, default=0)
+    base_ar_amount: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, default=0)
     fx_gain_loss: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("app_user.id"), nullable=False)

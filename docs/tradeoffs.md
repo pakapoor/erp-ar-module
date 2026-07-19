@@ -278,3 +278,37 @@ not the current page. Integration tests cover pages 1, 2, and 3 with
 `page_size=1`, duplicate prevention, page zero, and the maximum page size.
 
 ---
+
+## T15 — FX Rate Ingestion and Multi-Currency Posting
+
+**Q: How should AR obtain reproducible accounting rates without coupling a
+financial transaction to a live provider?**
+
+| Decision | Chosen approach | Benefit | Accepted cost |
+|---|---|---|---|
+| Prototype provider | Official ECB daily reference rates | Real, free, no API key, broad currency coverage | Informational reference rate, not necessarily the tenant's executable bank rate |
+| HTTP boundary | Separate FX worker | Provider secrets, retries and failures stay outside PostgreSQL | Another container and durable job workflow |
+| Scheduler | pg_cron inserts an import job | Exactly one schedule across many application/worker replicas | Job table and polling |
+| Accounting rate | One approved daily rate | Stable and auditable GL | Differs from intraday/bank settlement rate |
+| Missing rate | Latest approved prior rate up to 3 days, otherwise reject | Covers weekends without inventing a value | Foreign posting may pause during long outages/holidays |
+| Historical storage | Rate ID plus numeric transaction snapshot | Provenance and immutable books | Small data duplication |
+| Corrections | Insert a superseding rate; never overwrite | Complete audit history | More approval/state logic |
+| Tenant policy | Copy approved rates into tenant scope | Allows tenant provider/type/manual overrides | Duplicate small reference dataset |
+| V1 settlement | Payment currency must equal invoice currency | Demonstrates correct realized FX with bounded complexity | Cross-currency settlement deferred |
+| Currency scope | INR, USD, EUR, CNY, GBP, JPY, CHF, CAD | Bounded validation and test matrix | New currencies require configuration/testing |
+| Testing | Recorded ECB fixture plus optional live contract smoke test | Deterministic offline financial tests | Default suite does not prove live availability |
+
+The system prioritizes consistency over availability: a missing/stale foreign
+rate returns `FX_RATE_UNAVAILABLE`; it never substitutes 1.0. Invoice approval
+posts base-currency AR/revenue/tax using the locked invoice rate. Payment posts
+Cash using the payment-date rate, releases AR at each invoice rate, and posts
+the difference to realized FX Gain/Loss.
+
+ECB publishes its reference rates for information purposes and discourages
+using them as transaction prices. Therefore ECB is appropriate for this
+prototype and real-feed demonstration, while production requires a
+Finance-approved provider and accounting-rate policy. Detailed persistence,
+formulas, controls and tests are in
+[FX Rate Ingestion and Multi-Currency Design](fx-rate-design.md).
+
+---

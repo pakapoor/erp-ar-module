@@ -15,7 +15,7 @@ from src.auth import CurrentUser, require_role
 from src.models import (
     Invoice, Payment, PaymentAllocation,
     JournalEntry, JournalEntryLine, GLAccount,
-    IdempotencyKey, Customer, ExchangeRate, AccountingPeriod,
+    IdempotencyKey, Customer, Entity, ExchangeRate, AccountingPeriod,
 )
 from src.schemas import PaymentCreate
 from src.exceptions import (
@@ -261,6 +261,21 @@ async def create_payment(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
+    entity_currency_result = await db.execute(
+        select(Entity.currency).where(
+            and_(
+                Entity.id == current_user.entity_id,
+                Entity.tenant_id == current_user.tenant_id,
+            )
+        )
+    )
+    base_currency = entity_currency_result.scalar_one()
+    if payload.currency != base_currency:
+        raise HTTPException(
+            status_code=503,
+            detail="FX_RATE_UNAVAILABLE: foreign-currency import is not active yet",
+        )
+
     # ── Payment posting period must be OPEN ────────────────
     period_result = await db.execute(
         select(AccountingPeriod).where(
@@ -315,6 +330,8 @@ async def create_payment(
 
     # ── Create payment record ──────────────────────────────
     allocated_total = sum(a["amount"] for a in allocations)
+    base_allocated_total = allocated_total * exchange_rate
+    base_unallocated_total = overpayment_amount * exchange_rate
     payment = Payment(
         tenant_id=current_user.tenant_id,
         entity_id=current_user.entity_id,
@@ -323,11 +340,13 @@ async def create_payment(
         payment_date=payload.payment_date,
         transaction_currency=payload.currency,
         exchange_rate=exchange_rate,
-        base_currency=payload.currency,
+        base_currency=base_currency,
         amount=payment_amount,
         base_amount=base_amount,
         allocated_amount=allocated_total,
         unallocated_amount=overpayment_amount,
+        base_allocated_amount=base_allocated_total,
+        base_unallocated_amount=base_unallocated_total,
         payment_method=payload.payment_method,
         status="APPLIED" if overpayment_amount == 0 else "PARTIALLY_APPLIED",
         allocation_mode=payload.allocation_mode,
@@ -352,12 +371,17 @@ async def create_payment(
         if invoice.exchange_rate != exchange_rate:
             fx_gain_loss = amount * (exchange_rate - invoice.exchange_rate)
 
+        base_payment_amount = amount * exchange_rate
+        base_ar_amount = amount * invoice.exchange_rate
+
         # Create payment allocation record
         pa = PaymentAllocation(
             tenant_id=current_user.tenant_id,
             payment_id=payment.id,
             invoice_id=invoice.id,
             amount_allocated=amount,
+            base_payment_amount=base_payment_amount,
+            base_ar_amount=base_ar_amount,
             fx_gain_loss=fx_gain_loss,
             created_by=current_user.user_id,
         )
@@ -365,6 +389,7 @@ async def create_payment(
 
         # Update invoice balance and status
         invoice.balance_amount = balance_after
+        invoice.base_balance_amount = balance_after * invoice.exchange_rate
         invoice.updated_at = datetime.utcnow()
 
         if balance_after == 0:

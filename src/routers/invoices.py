@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 from src.database import get_db
 from src.auth import CurrentUser, get_current_user, require_role
 from src.models import (
-    Invoice, InvoiceLineItem, Customer, AccountingPeriod,
+    Invoice, InvoiceLineItem, Customer, Entity, AccountingPeriod,
     JournalEntry, JournalEntryLine, GLAccount,
     IdempotencyKey, DeliveryOutbox, AuditLog,
     PaymentAllocation, Payment, CreditMemo
@@ -215,6 +215,21 @@ async def create_invoice(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
+    entity_currency_result = await db.execute(
+        select(Entity.currency).where(
+            and_(
+                Entity.id == current_user.entity_id,
+                Entity.tenant_id == current_user.tenant_id,
+            )
+        )
+    )
+    base_currency = entity_currency_result.scalar_one()
+    if payload.currency != base_currency:
+        raise HTTPException(
+            status_code=503,
+            detail="FX_RATE_UNAVAILABLE: foreign-currency import is not active yet",
+        )
+
     # ── Begin ACID transaction ─────────────────────────────
     await create_idempotency_key(
         db, x_idempotency_key, current_user.tenant_id, current_user.entity_id,
@@ -272,7 +287,7 @@ async def create_invoice(
         status="DRAFT",
         transaction_currency=payload.currency,
         exchange_rate=exchange_rate,
-        base_currency=payload.currency,  # simplified for prototype
+        base_currency=base_currency,
         subtotal_amount=subtotal_total,
         tax_amount=tax_total,
         total_amount=grand_total,
@@ -280,6 +295,7 @@ async def create_invoice(
         base_subtotal_amount=subtotal_total,
         base_tax_amount=tax_total,
         base_total_amount=grand_total,
+        base_balance_amount=grand_total,
         invoice_date=payload.invoice_date,
         due_date=due_date,
         payment_terms=payload.payment_terms,

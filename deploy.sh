@@ -229,7 +229,7 @@ show_failure_context() {
     docker compose ps >&2
     echo >&2
     echo "Recent service logs:" >&2
-    docker compose logs --tail=60 gateway db app stub delivery_worker >&2
+    docker compose logs --tail=60 gateway db app stub delivery_worker fx_rate_worker >&2
   else
     echo "Docker Compose is not available; service diagnostics were skipped." >&2
   fi
@@ -345,13 +345,25 @@ else
   echo "Migration 005 already present"
 fi
 
+fx_import_table="$(
+  docker compose exec -T db psql -U erp_user -d erp_db -Atc \
+    "SELECT COALESCE(to_regclass('public.fx_import_job')::text, '');"
+)"
+if [ "$fx_import_table" != "fx_import_job" ]; then
+  docker compose exec -T db psql -U erp_user -d erp_db \
+    -v ON_ERROR_STOP=1 \
+    -f /docker-entrypoint-initdb.d/006_fx_rate_ingestion.sql
+else
+  echo "Migration 006 already present"
+fi
+
 log "Refreshing the aging snapshot for deterministic health verification"
 docker compose exec -T db psql -U erp_user -d erp_db \
   -v ON_ERROR_STOP=1 \
   -c "REFRESH MATERIALIZED VIEW CONCURRENTLY ar_aging" >/dev/null
 
-log "Starting the internal AR application, delivery worker, and L7 gateway"
-docker compose up "${up_options[@]}" app delivery_worker gateway
+log "Starting the internal AR application, workers, and L7 gateway"
+docker compose up "${up_options[@]}" app delivery_worker fx_rate_worker gateway
 
 log "Waiting for service health checks"
 wait_for_url "http://localhost:9000/health" "Delivery stub"
@@ -378,6 +390,12 @@ if [ -z "$worker_container" ]; then
   exit 1
 fi
 
+fx_worker_container="$(docker compose ps --status running --quiet fx_rate_worker)"
+if [ -z "$fx_worker_container" ]; then
+  echo "FX rate worker is not running" >&2
+  exit 1
+fi
+
 if [ "$RUN_SEED" = true ]; then
   log "Seeding deterministic demonstration data"
   docker compose exec -T app python -m src.seed_data
@@ -396,3 +414,4 @@ echo "AR API:        internal app:8080 (not host-published)"
 echo "API docs:      http://localhost:8000/docs"
 echo "Delivery stub: http://localhost:9000"
 echo "Live delivery: docker compose logs -f stub delivery_worker"
+echo "Live FX feed:  docker compose logs -f fx_rate_worker"
