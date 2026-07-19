@@ -89,11 +89,14 @@ Approval requires a separate approver, an OPEN document-date period, an idempote
 
 Operational extension: `GET /health` checks database access, materialized-view age, and AR-to-GL reconciliation.
 
+The complete procedure, expected response values, database inspection queries,
+pg_cron proof, delivery logs, and retry drill are documented in
+[Verification and Expected Results](testing.md).
+
 Run the repeatable integration test:
 
 ```bash
-docker compose up -d --build
-./test_api.sh
+./deploy.sh --test
 ```
 
 The script seeds deterministic data, generates fresh development JWTs, derives the created invoice ID, uses fail-on-HTTP-error calls, performs financial assertions, and verifies that retrying a completed payment returns the original payment rather than creating a duplicate.

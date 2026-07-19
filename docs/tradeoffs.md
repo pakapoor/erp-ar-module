@@ -183,11 +183,22 @@ NFR2 requires < 100ms — live JOIN with indexes achieves this. Invoice detail s
 |--|--|--|--|
 | Prototype complexity | Simple | Medium | Medium |
 | Approval/event atomicity | No | Yes | No |
+| Crash after approval commit | Event can be lost | PENDING row survives | Publish may never occur |
+| Delivery outage | Can fail/slow API3 | Approval succeeds; worker retries | Approval depends on broker call |
 | Retry after process crash | Fragile | Durable | Durable after publish |
 | Extra infra | None | Worker; existing DB | SQS |
 
 **Decision: PostgreSQL transactional outbox + worker**
 Approval, GL entries, idempotency result, and a PENDING delivery event commit in one transaction. A separate Docker worker uses `FOR UPDATE SKIP LOCKED`, calls the stub, and retries with exponential backoff; exhausted events become DEAD for operational intervention. Delivery is at-least-once, so the stable outbox event ID is sent as the downstream idempotency key. Production can retain the outbox and publish to SQS before Email/EDI/IRP adapters.
+
+**Reasons:**
+- PostgreSQL remains the source of truth: delivery failure must not reverse a committed approval or GL entry.
+- Writing the event in the approval transaction removes the crash window between database commit and a direct HTTP/SQS call.
+- It reuses the existing PostgreSQL consistency boundary and avoids adding Redis, Kafka, or SQS to the prototype.
+- Durable status, attempt count, backoff, last error, and DEAD state make failures visible and recoverable.
+- `FOR UPDATE SKIP LOCKED` permits horizontal worker scaling without two workers claiming the same row concurrently.
+
+**Accepted tradeoffs:** database polling adds load and delivery is at-least-once rather than exactly-once. A crash after the stub accepts an event but before the worker records DELIVERED can cause a retry, so the downstream service must deduplicate using the stable outbox event ID. Outbox retention and DEAD-event monitoring also require operational housekeeping.
 
 ---
 

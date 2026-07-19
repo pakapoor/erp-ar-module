@@ -5,8 +5,7 @@ Built as part of a Principal Engineer technical assessment for DeepRunner.ai.
 
 ## Quick Start
 ```bash
-docker compose up -d --build
-./test_api.sh
+./deploy.sh --test
 ```
 
 ## Tech Stack
@@ -24,6 +23,8 @@ For interview/review, follow this order:
 - [API Design](docs/api-design.md)
 - [Design Tradeoffs](docs/tradeoffs.md)
 - [Financial Controls](docs/financial-controls.md)
+- [Local Deployment Guide](docs/deployment.md)
+- [Verification and Expected Results](docs/testing.md)
 - [Experience Showcase](docs/experience-showcase.md)
 - [Consolidated Assessment Submission](docs/assessment-submission.md)
 
@@ -61,6 +62,10 @@ the six required endpoints plus health, and asserts invoice totals, payment
 idempotency, aging, balanced journal entries, AR-to-GL reconciliation,
 transactional-outbox delivery, cross-tenant denial, RBAC denial, and
 idempotency-payload conflict handling.
+
+Detailed commands, database inspection queries, expected output, pg_cron
+verification, and an optional delivery-retry drill are in
+[Verification and Expected Results](docs/testing.md).
 
 ## Time Tracking
 
