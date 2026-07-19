@@ -412,7 +412,7 @@ Invoice Status: Void ✅
 
 ---
 
-## FR-B1 — AR Aging Report
+## FR5 — AR Aging Report
 
 System must generate AR aging report showing outstanding invoice balances grouped by days overdue. Used by CFO and collections team to track overdue payments and identify write-off candidates.
 
@@ -462,7 +462,7 @@ Invoice detail:
 
 ---
 
-## FR-B2 — GL Journal Entries and Reconciliation
+## FR6 — GL Journal Entries and Reconciliation
 
 System must maintain complete journal entry trail for every financial event. All journal entries must be immutable. AR subledger must reconcile to GL at all times. Nightly reconciliation job detects and alerts on any mismatch.
 
@@ -525,7 +525,7 @@ COMMIT
 
 ---
 
-## FR-B3 — Multi-tenant Isolation
+## FR7 — Multi-tenant Isolation
 
 System must completely isolate data between tenants. No tenant can ever see another tenant's data. Isolation enforced at both application layer (JWT) and database layer (Row Level Security). Every table contains tenant_id. Every query filters by tenant_id.
 
@@ -588,7 +588,7 @@ ERP: WHERE tenant_id=X AND entity_id=Y
 
 ---
 
-## FR-B1 — Multi-currency
+## FR8 — Multi-currency
 
 **Implementation status:** `IN PROGRESS` — ingestion migration, daily schedule,
 live ECB worker and deterministic feed tests are complete; invoice/payment FX
@@ -681,7 +681,7 @@ Audit trail:  Records immutable rate ID, value, source date and reason
 
 ---
 
-## FR-B2 — Audit Trail
+## FR9 — Audit Trail
 
 Every financial record change must be captured in audit log. Stores who, what, when, old value, new value. Immutable — never deleted. Retained 7 years for SOX compliance. Implemented as audit table for quick queries + Kafka for event replay and S3 WORM for long term archival.
 
@@ -716,7 +716,7 @@ S3 WORM                  → compliance archival (immutable)
 
 ---
 
-## FR-B3 — Period Close
+## FR10 — Period Close
 
 System must support monthly and yearly period close. Once a period is closed, no new transactions can be posted to that period. Two levels of closure: CLOSED (CFO can reopen) and LOCKED (permanent, after audit/tax filing). Enforced at both application and database level.
 
@@ -885,7 +885,7 @@ Posted:   System Feb 5 11:00
 
 ---
 
-## FR-B1 — User Management and RBAC
+## FR11 — User Management and RBAC
 
 System must support role-based access control. Each user has one or more roles. Roles determine what actions a user can perform. SOX requires strict segregation of duties — same user cannot create and approve the same invoice.
 

@@ -50,12 +50,12 @@ API flows shown in diagram:
 - ② GET /invoices/{id} — invoice retrieval (FR1)
 - ③ POST /invoices/{id}/approve — invoice approval + GL entries (FR2)
 - ④ POST /payments — payment recording + allocation (FR4)
-- ⑤ GET /customers/{id}/aging — AR aging report (FR-B1)
-- ⑥ GET /journal-entries — GL journal entries (FR-B2)
-- ⑦ GET /health — operational health check (NFR-B1)
+- ⑤ GET /customers/{id}/aging — AR aging report (FR5)
+- ⑥ GET /journal-entries — GL journal entries (FR6)
+- ⑦ GET /health — operational health check (NFR5)
 
 ① ② ③ ④ ⑤ ⑥ = business APIs (FRs)
-⑦ = operational API (NFR-B1)
+⑦ = operational API (NFR5)
 
 ---
 
@@ -101,7 +101,7 @@ derivation, posting examples, failure rules and test acceptance criteria.
 - No audit log written (reads not audited)
 - Result: 200 + payment history + credit memo history + status history
 
-### ③ POST /invoices/{id}/approve (FR2, FR-B2, FR-B2, FR-B3)
+### ③ POST /invoices/{id}/approve (FR2, FR9, FR10)
 - Required role: invoice_approver or cfo
 - X-Idempotency-Key required
 - If-Match: version required (ABA prevention via optimistic locking)
@@ -117,7 +117,7 @@ derivation, posting examples, failure rules and test acceptance criteria.
 - Audit trigger fires automatically
 - Result: 200, status=APPROVED, version+1, journal_entry_id, delivery_status=QUEUED
 
-### ④ POST /payments (FR4, FR-B1)
+### ④ POST /payments (FR4, FR8)
 - Required role: payment_recorder
 - X-Idempotency-Key required
 - Serializable isolation level (strictest) — prevents double allocation
@@ -134,7 +134,7 @@ derivation, posting examples, failure rules and test acceptance criteria.
 - Defence in depth: idempotency key + UNIQUE(tenant_id, customer_id, payment_reference)
 - Result: 201 + allocations + journal_entry_id
 
-### ⑤ GET /customers/{id}/aging (FR-B1)
+### ⑤ GET /customers/{id}/aging (FR5)
 - Required role: any authenticated user
 - Reads from ar_aging materialized view (pre-computed)
 - Sums `base_balance_amount` in entity currency; DRAFT invoices are excluded
@@ -146,7 +146,7 @@ derivation, posting examples, failure rules and test acceptance criteria.
 - No Redis, no external cache — consistent with no-Redis decision
 - Result: 200 + aging buckets + as_of timestamp
 
-### ⑥ GET /journal-entries (FR-B2)
+### ⑥ GET /journal-entries (FR6)
 - Required role: any authenticated user of the same entity
 - invoice_id required filter (SOX — must be traceable to source document)
 - Live query — journal entries immutable but must never appear missing (SOX!)
@@ -154,7 +154,7 @@ derivation, posting examples, failure rules and test acceptance criteria.
 - Indexed on: tenant_id, reference_type + reference_id, entry_date
 - Result: 200 + journal entries + lines + pagination
 
-### ⑦ GET /health (NFR-B1)
+### ⑦ GET /health (NFR5)
 - No auth required — used by Docker, load balancer, DataDog
 - Shows: DB status, MV age, last reconciliation status
 - Reconciles posted invoice base balances to base-currency AR GL per entity
@@ -176,13 +176,13 @@ derivation, posting examples, failure rules and test acceptance criteria.
 - kid header in JWT → lookup correct public key → verify signature
 - Local demo traffic is HTTP; production terminates TLS at Envoy with managed certificates
 
-### Observability (NFR-B1)
+### Observability (NFR5)
 - Envoy overwrites/injects `X-Trace-ID` from its generated request ID
 - Flows through AR App → PostgreSQL → audit_log
 - DataDog APM traces full request lifecycle
 - PagerDuty alerts on: AR/GL mismatch, payment failure > 1%, DB down
 
-### Scalability (NFR-B2)
+### Scalability (NFR6)
 - AR Application is stateless → horizontal scaling via load balancer
 - No stickiness needed — JWT carries all context
 - PostgreSQL: primary for writes, read replica for reporting (Phase 2)

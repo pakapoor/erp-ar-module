@@ -1022,11 +1022,11 @@ POST /invoices/{id}/void          ← FR-B3: void invoice
 POST /invoices/{id}/credit-memos  ← FR-B1: create credit memo
 POST /invoices/{id}/writeoff      ← FR-B2: write off invoice
 POST /journal-entries/manual      ← FR-B5: manual journal entry
-POST /periods/{id}/close          ← FR-B3: close accounting period
-POST /periods/{id}/reopen         ← FR-B3: CFO reopens CLOSED period with reason
-POST /periods/{id}/lock           ← FR-B3: lock accounting period
-POST /users                       ← FR-B1: create user
-POST /users/{id}/roles            ← FR-B1: assign role
+POST /periods/{id}/close          ← FR10: close accounting period
+POST /periods/{id}/reopen         ← FR10: CFO reopens CLOSED period with reason
+POST /periods/{id}/lock           ← FR10: lock accounting period
+POST /users                       ← FR11: create user
+POST /users/{id}/roles            ← FR11: assign role
 ```
 
 ### Bulk Operations (Phase 2)
@@ -1042,6 +1042,6 @@ GET  /jobs/{job_id}               ← poll async job status
 
 ```
 GET /reports/consolidated         ← FR-B4: consolidated multi-entity report
-GET /reports/reconciliation       ← FR-B2: AR vs GL reconciliation status
-GET /audit-log                    ← FR-B2: SOX audit trail
+GET /reports/reconciliation       ← FR6: AR vs GL reconciliation status
+GET /audit-log                    ← FR9: SOX audit trail
 ```
