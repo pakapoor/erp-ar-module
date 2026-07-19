@@ -152,7 +152,7 @@ async def _get_bucket_invoice_ids(
     )
     buckets = {"current": [], "days_30": [], "days_60": [], "days_90_plus": []}
     for row in result.fetchall():
-        buckets[row.bucket].append(row.id)
+        buckets[row.bucket].append(str(row.id))
     return buckets
 
 
@@ -203,7 +203,7 @@ async def _compute_aging_live(
     for row in rows:
         bucket = row.bucket
         buckets[bucket]["amount"] += row.balance_amount
-        buckets[bucket]["invoices"].append(row.id)
+        buckets[bucket]["invoices"].append(str(row.id))
         total += row.balance_amount
 
     return JSONResponse(

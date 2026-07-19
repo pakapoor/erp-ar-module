@@ -149,6 +149,15 @@ async def create_invoice(
     current_user: CurrentUser = Depends(require_role("invoice_creator", "cfo", "system_admin")),
     db: AsyncSession = Depends(get_db),
 ):
+    await db.execute(
+        text("""
+            SELECT
+                set_config('app.current_user_id', :user_id, true),
+                set_config('app.tenant_id', :tenant_id, true)
+        """),
+        {"user_id": current_user.user_id, "tenant_id": current_user.tenant_id},
+    )
+
     # ── Idempotency check ──────────────────────────────────
     request_hash = hashlib.sha256(
         json.dumps(payload.model_dump(), default=str).encode()
@@ -477,6 +486,14 @@ async def approve_invoice(
 ):
     # Must be the first DB statement in this transaction.
     await db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
+    await db.execute(
+        text("""
+            SELECT
+                set_config('app.current_user_id', :user_id, true),
+                set_config('app.tenant_id', :tenant_id, true)
+        """),
+        {"user_id": current_user.user_id, "tenant_id": current_user.tenant_id},
+    )
 
     # ── Idempotency check ──────────────────────────────────
     request_hash = hashlib.sha256(

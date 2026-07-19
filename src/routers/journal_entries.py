@@ -71,7 +71,7 @@ async def get_journal_entries(
     entries_result = await db.execute(
         text("""
             SELECT id, reference_type, reference_id,
-                   entry_date, description, created_by, currency
+                   document_date, entry_date, description, created_by, currency
             FROM journal_entry
             WHERE tenant_id = :tenant_id
               AND (
@@ -133,9 +133,10 @@ async def get_journal_entries(
                 total_credited_ar += Decimal(str(line.credit_amount))
 
         journal_entries_response.append({
-            "id": entry.id,
+            "id": str(entry.id),
             "reference_type": entry.reference_type,
             "reference_id": str(entry.reference_id),
+            "document_date": str(entry.document_date),
             "entry_date": str(entry.entry_date),
             "description": entry.description,
             "created_by": str(entry.created_by),

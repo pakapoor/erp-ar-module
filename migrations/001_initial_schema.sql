@@ -782,15 +782,29 @@ SELECT
     AND i.due_date >= CURRENT_DATE - INTERVAL '30 days'
     AND i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
   ), 0) AS days_30_amount,
+  COUNT(*) FILTER (
+    WHERE i.due_date < CURRENT_DATE
+    AND i.due_date >= CURRENT_DATE - INTERVAL '30 days'
+    AND i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
+  ) AS days_30_count,
   COALESCE(SUM(i.balance_amount) FILTER (
     WHERE i.due_date < CURRENT_DATE - INTERVAL '30 days'
     AND i.due_date >= CURRENT_DATE - INTERVAL '60 days'
     AND i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
   ), 0) AS days_60_amount,
+  COUNT(*) FILTER (
+    WHERE i.due_date < CURRENT_DATE - INTERVAL '30 days'
+    AND i.due_date >= CURRENT_DATE - INTERVAL '60 days'
+    AND i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
+  ) AS days_60_count,
   COALESCE(SUM(i.balance_amount) FILTER (
     WHERE i.due_date < CURRENT_DATE - INTERVAL '60 days'
     AND i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
   ), 0) AS days_90_plus_amount,
+  COUNT(*) FILTER (
+    WHERE i.due_date < CURRENT_DATE - INTERVAL '60 days'
+    AND i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
+  ) AS days_90_plus_count,
   COALESCE(SUM(i.balance_amount) FILTER (
     WHERE i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
   ), 0) AS total_outstanding

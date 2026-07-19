@@ -43,3 +43,29 @@ curl -s -X POST http://localhost:8000/api/v1/invoices/4987680d-830b-4305-93c9-c0
   -H "X-Idempotency-Key: 660e8400-e29b-41d4-a716-446655440001" \
   -H "If-Match: 1" \
   -d '{"notes": "Approved after tax jurisdiction check"}' | python3 -m json.tool
+
+echo "=== API4: POST /payments ==="
+curl -s -X POST http://localhost:8000/api/v1/payments \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: 770e8400-e29b-41d4-a716-446655440002" \
+  -d '{
+    "customer_id": "00000000-0000-0000-0000-000000000005",
+    "payment_reference": "PAY-2026-001",
+    "payment_date": "2026-07-19",
+    "amount": 100000,
+    "currency": "INR",
+    "payment_method": "NEFT",
+    "allocation_mode": "AUTO"
+  }' | python3 -m json.tool
+
+echo "=== API5: GET /customers/{id}/aging ==="
+curl -s "http://localhost:8000/api/v1/customers/00000000-0000-0000-0000-000000000005/aging?entity_id=00000000-0000-0000-0000-000000000002" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+
+echo "=== API6: GET /journal-entries ==="
+curl -s "http://localhost:8000/api/v1/journal-entries?invoice_id=4987680d-830b-4305-93c9-c01b5b66c4e4" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+
+echo "=== API7: GET /health ==="
+curl -s http://localhost:8000/health | python3 -m json.tool

@@ -18,10 +18,10 @@ router = APIRouter()
 APP_VERSION = "1.0.0"
 
 
-@router.get("/api/v1/health")
+@router.get("/health")
 async def health_check(db: AsyncSession = Depends(get_db)):
     """
-    GET /api/v1/health
+    GET /health
     NFR5 — Observability
 
     No auth required — used by Docker, load balancer, DataDog.
@@ -45,13 +45,16 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     # ── AR aging MV freshness ──────────────────────────────
     try:
         result = await db.execute(
-            text("SELECT MAX(as_of) as last_refresh FROM ar_aging")
+            text("""
+                SELECT EXTRACT(
+                    EPOCH FROM (NOW() - MAX(as_of))
+                ) / 60 AS age_minutes
+                FROM ar_aging
+            """)
         )
         row = result.fetchone()
-        if row and row.last_refresh:
-            age_minutes = (
-                datetime.utcnow() - row.last_refresh
-            ).total_seconds() / 60
+        if row and row.age_minutes is not None:
+            age_minutes = float(row.age_minutes)
             checks["materialized_view_age_minutes"] = round(age_minutes, 1)
             if age_minutes > 10:
                 checks["materialized_view_status"] = "stale"

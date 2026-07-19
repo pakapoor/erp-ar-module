@@ -236,6 +236,7 @@ class JournalEntryResponse(BaseModel):
     id: str
     reference_type: str
     reference_id: str
+    document_date: date
     entry_date: date
     description: str
     created_by: str

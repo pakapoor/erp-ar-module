@@ -15,7 +15,7 @@ from src.auth import CurrentUser, require_role
 from src.models import (
     Invoice, Payment, PaymentAllocation,
     JournalEntry, JournalEntryLine, GLAccount,
-    IdempotencyKey, Customer, ExchangeRate,
+    IdempotencyKey, Customer, ExchangeRate, AccountingPeriod,
 )
 from src.schemas import PaymentCreate
 from src.exceptions import (
@@ -210,6 +210,17 @@ async def create_payment(
     current_user: CurrentUser = Depends(require_role("payment_recorder", "cfo")),
     db: AsyncSession = Depends(get_db),
 ):
+    # Must be the first DB statement in this transaction.
+    await db.execute(text("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE"))
+    await db.execute(
+        text("""
+            SELECT
+                set_config('app.current_user_id', :user_id, true),
+                set_config('app.tenant_id', :tenant_id, true)
+        """),
+        {"user_id": current_user.user_id, "tenant_id": current_user.tenant_id},
+    )
+
     # ── Idempotency check ──────────────────────────────────
     request_hash = hashlib.sha256(
         json.dumps(payload.model_dump(), default=str).encode()
@@ -225,10 +236,6 @@ async def create_payment(
             content=existing.response_body
         )
 
-    # ── SERIALIZABLE isolation for payment allocation ──────
-    # Prevents double allocation if two payments hit same invoice
-    await db.execute(text("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE"))
-
     # ── Validate customer ──────────────────────────────────
     result = await db.execute(
         select(Customer).where(
@@ -242,6 +249,25 @@ async def create_payment(
     customer = result.scalar_one_or_none()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+
+    # ── Payment posting period must be OPEN ────────────────
+    period_result = await db.execute(
+        select(AccountingPeriod).where(
+            and_(
+                AccountingPeriod.tenant_id == current_user.tenant_id,
+                AccountingPeriod.entity_id == current_user.entity_id,
+                AccountingPeriod.start_date <= payload.payment_date,
+                AccountingPeriod.end_date >= payload.payment_date,
+                AccountingPeriod.status == "OPEN",
+            )
+        )
+    )
+    period = period_result.scalar_one_or_none()
+    if not period:
+        raise BusinessRuleException(
+            "PERIOD_NOT_OPEN",
+            f"No OPEN accounting period for payment date {payload.payment_date}",
+        )
 
     # ── Get exchange rate ──────────────────────────────────
     exchange_rate, rate_date_used, fx_warning = await get_exchange_rate(
@@ -372,6 +398,7 @@ async def create_payment(
     journal_entry = JournalEntry(
         tenant_id=current_user.tenant_id,
         entity_id=current_user.entity_id,
+        period_id=period.id,
         reference_type="PAYMENT",
         reference_id=payment.id,
         document_date=payload.payment_date,

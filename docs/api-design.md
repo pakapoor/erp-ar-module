@@ -923,7 +923,7 @@ Health check endpoint for Docker and load balancer.
 ### Request
 
 ```
-GET /api/v1/health
+GET /health
 ```
 
 No auth required — used by infrastructure.
