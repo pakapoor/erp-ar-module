@@ -447,17 +447,20 @@ class CreditMemo(Base):
 class IdempotencyKey(Base):
     __tablename__ = "idempotency_key"
 
-    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
     tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenant.id"), nullable=False)
     endpoint: Mapped[str] = mapped_column(String(100), nullable=False)
+    key: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="PROCESSING")
-    request_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # SHA-256
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # SHA-256
     response_status: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     response_body: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     __table_args__ = (
+        UniqueConstraint("tenant_id", "endpoint", "key", name="idempotency_scope_unique"),
         Index("idx_idempotency_tenant", "tenant_id"),
         Index("idx_idempotency_expires", "expires_at"),
     )

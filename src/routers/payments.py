@@ -476,7 +476,14 @@ async def create_payment(
         "created_at": payment.created_at.isoformat(),
     }
 
-    await complete_idempotency_key(db, x_idempotency_key, 201, response_body)
+    await complete_idempotency_key(
+        db,
+        x_idempotency_key,
+        current_user.tenant_id,
+        "POST /payments",
+        201,
+        response_body,
+    )
     await db.commit()
 
     logger.info(

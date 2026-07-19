@@ -13,7 +13,11 @@ router = APIRouter()
 
 @router.get("/journal-entries")
 async def get_journal_entries(
-    invoice_id: str = Query(..., description="Required — invoice to fetch GL entries for"),
+    invoice_id: str = Query(
+        ...,
+        alias="invoice",
+        description="Required — invoice to fetch GL entries for",
+    ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     current_user: CurrentUser = Depends(get_current_user),

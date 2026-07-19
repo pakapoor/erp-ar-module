@@ -62,23 +62,29 @@ async def check_idempotency(
     Raises IdempotencyConflictException on conflicts.
     """
     result = await db.execute(
-        select(IdempotencyKey).where(IdempotencyKey.key == key)
+        select(IdempotencyKey).where(
+            and_(
+                IdempotencyKey.tenant_id == tenant_id,
+                IdempotencyKey.endpoint == endpoint,
+                IdempotencyKey.key == key,
+            )
+        )
     )
     existing = result.scalar_one_or_none()
 
     if existing:
-        if existing.status == "COMPLETED" and existing.request_hash == request_hash:
-            # Safe replay — return cached response
-            return existing
-        elif existing.status == "PROCESSING":
-            raise IdempotencyConflictException(
-                "Request is already being processed",
-                "REQUEST_IN_PROGRESS"
-            )
-        elif existing.request_hash != request_hash:
+        if existing.request_hash != request_hash:
             raise IdempotencyConflictException(
                 "Idempotency key reused with different payload",
                 "IDEMPOTENCY_KEY_REUSED"
+            )
+        if existing.status == "COMPLETED":
+            # Safe replay — return cached response
+            return existing
+        if existing.status == "PROCESSING":
+            raise IdempotencyConflictException(
+                "Request is already being processed",
+                "REQUEST_IN_PROGRESS"
             )
     return None
 
@@ -106,17 +112,26 @@ async def create_idempotency_key(
 async def complete_idempotency_key(
     db: AsyncSession,
     key: str,
+    tenant_id: str,
+    endpoint: str,
     response_status: int,
     response_body: dict,
 ):
     """Mark idempotency key as COMPLETED with cached response"""
     result = await db.execute(
-        select(IdempotencyKey).where(IdempotencyKey.key == key)
+        select(IdempotencyKey).where(
+            and_(
+                IdempotencyKey.tenant_id == tenant_id,
+                IdempotencyKey.endpoint == endpoint,
+                IdempotencyKey.key == key,
+            )
+        )
     )
     idem = result.scalar_one()
     idem.status = "COMPLETED"
     idem.response_status = response_status
     idem.response_body = response_body
+    idem.updated_at = datetime.utcnow()
     await db.flush()
 
 
@@ -324,7 +339,14 @@ async def create_invoice(
     }
 
     # ── Complete idempotency key ───────────────────────────
-    await complete_idempotency_key(db, x_idempotency_key, 201, response_body)
+    await complete_idempotency_key(
+        db,
+        x_idempotency_key,
+        current_user.tenant_id,
+        "POST /invoices",
+        201,
+        response_body,
+    )
     await db.commit()
 
     logger.info(f"Invoice {invoice.id} created by {current_user.user_id}")
@@ -666,7 +688,14 @@ async def approve_invoice(
         "journal_entry_id": journal_entry.id,
     }
 
-    await complete_idempotency_key(db, x_idempotency_key, 200, response_body)
+    await complete_idempotency_key(
+        db,
+        x_idempotency_key,
+        current_user.tenant_id,
+        f"POST /invoices/{invoice_id}/approve",
+        200,
+        response_body,
+    )
     await db.commit()
 
     logger.info(

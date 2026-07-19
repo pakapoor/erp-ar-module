@@ -23,7 +23,9 @@ Key decisions:
 - Optimistic locking: version column prevents ABA problem
 - Audit triggers: DB-level, cannot be bypassed by application code
 - Period close: enforced at both app and DB trigger level
-- pg_cron: MV refresh scheduled inside PostgreSQL — no separate scheduler service
+- pg_cron: selected deployment design for the 5-minute MV refresh; the local
+  prototype uses the stock PostgreSQL image and refreshes explicitly in the
+  integration test
 
 ---
 
@@ -96,7 +98,8 @@ API flows shown in diagram:
 - Reads from ar_aging materialized view (pre-computed)
 - 5 minute staleness acceptable — collections team reviews once daily
 - as_of timestamp shown in response (explicit staleness)
-- MV refreshed by pg_cron every 5 minutes inside PostgreSQL
+- Deployment target: MV refreshed by pg_cron every 5 minutes inside PostgreSQL
+- Local prototype: test performs an explicit refresh; live fallback handles a missing MV row
 - No Redis, no external cache — consistent with no-Redis decision
 - Result: 200 + aging buckets + as_of timestamp
 

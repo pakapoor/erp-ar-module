@@ -5,14 +5,15 @@ Built as part of a Principal Engineer technical assessment for DeepRunner.ai.
 
 ## Quick Start
 ```bash
-docker-compose up
+docker compose up -d --build
+./test_api.sh
 ```
 
 ## Tech Stack
 - **Backend:** Python / FastAPI
 - **Database:** PostgreSQL (with Row Level Security)
 - **Containerization:** Docker / Docker Compose
-- **AI Tools Used:** Claude (domain learning + design), GitHub Copilot (code)
+- **AI Tools Used:** Claude (domain learning and design), GitHub Copilot (code assistance), Codex (implementation review, debugging, and integration verification)
 
 ## Design Walkthrough
 For interview/review, follow this order:
@@ -24,17 +25,22 @@ For interview/review, follow this order:
 - [Design Tradeoffs](docs/tradeoffs.md)
 - [Financial Controls](docs/financial-controls.md)
 - [Experience Showcase](docs/experience-showcase.md)
+- [Consolidated Assessment Submission](docs/assessment-submission.md)
 
 ## Key Capabilities
 - Multi-tenant data isolation (JWT + PostgreSQL RLS)
-- Multi-entity support with intercompany elimination
-- Multi-currency invoicing with FX gain/loss tracking
-- Complete GL journal entry generation
-- Invoice lifecycle state machine
+- Multi-entity-aware data model
+- Transaction/base-currency and exchange-rate data model
+- Balanced GL journal entries for approval and payment
+- Draft, approval, partial-payment, and paid lifecycle transitions
 - AR aging report
 - Idempotent write APIs with cached retry responses
-- SOX-compliant audit trail
-- Period close controls
+- Database-triggered audit trail with actor context
+- Application and database period-posting controls
+
+Designed but deferred from the required prototype: delivery, credit memos,
+write-offs, void/reissue, intercompany elimination, full FX processing, manual
+journals, and period-management APIs.
 
 ## API Endpoints
 | Method | Endpoint | Description |
@@ -45,6 +51,24 @@ For interview/review, follow this order:
 | POST | /payments | Record payment + allocate to invoices |
 | GET | /customers/{id}/aging | AR aging report |
 | GET | /journal-entries | GL entries for invoice |
+| GET | /health | Operational health and AR/GL reconciliation |
+
+## Verification
+
+`test_api.sh` seeds deterministic data, creates fresh development JWTs, tests
+the six required endpoints plus health, and asserts invoice totals, payment
+idempotency, aging, balanced journal entries, AR-to-GL reconciliation,
+cross-tenant denial, RBAC denial, and idempotency-payload conflict handling.
+
+## Time Tracking
+
+This project was expanded beyond the assessment's 3–4 hour prototype timebox
+as an interactive learning and interview-walkthrough exercise. Before final
+submission, replace the placeholders below with your actual approximate time:
+
+- Data model and architecture: `[candidate to provide]`
+- Working prototype: `[candidate to provide]`
+- Financial controls and compliance analysis: `[candidate to provide]`
+- Experience showcase: `[candidate to provide]`
 
 ## Project Structure
-</content>
