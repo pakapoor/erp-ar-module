@@ -270,6 +270,13 @@ async def create_invoice(
 
     await db.flush()
 
+    line_items_result = await db.execute(
+        select(InvoiceLineItem)
+        .where(InvoiceLineItem.invoice_id == invoice.id)
+        .order_by(InvoiceLineItem.line_number)
+    )
+    saved_line_items = line_items_result.scalars().all()
+
     # ── Build response ─────────────────────────────────────
     response_body = {
         "id": invoice.id,
@@ -303,10 +310,7 @@ async def create_invoice(
                 "tax_amount": str(li.tax_amount),
                 "total_price": str(li.total_price),
             }
-            for li in await db.execute(
-                select(InvoiceLineItem).where(InvoiceLineItem.invoice_id == invoice.id)
-                .order_by(InvoiceLineItem.line_number)
-            ).then(lambda r: r.scalars().all())
+            for li in saved_line_items
         ],
     }
 
@@ -471,6 +475,9 @@ async def approve_invoice(
     current_user: CurrentUser = Depends(require_role("invoice_approver", "cfo")),
     db: AsyncSession = Depends(get_db),
 ):
+    # Must be the first DB statement in this transaction.
+    await db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
+
     # ── Idempotency check ──────────────────────────────────
     request_hash = hashlib.sha256(
         f"{invoice_id}:{current_user.user_id}".encode()
@@ -487,8 +494,6 @@ async def approve_invoice(
         )
 
     # ── Fetch invoice with Repeatable Read ─────────────────
-    await db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
-
     result = await db.execute(
         select(Invoice).where(
             and_(
@@ -577,6 +582,7 @@ async def approve_invoice(
         period_id=period.id,
         reference_type="INVOICE",
         reference_id=invoice.id,
+        document_date=invoice.invoice_date,
         entry_date=invoice.invoice_date,
         description=f"Invoice {invoice.id} approved",
         currency=invoice.transaction_currency,

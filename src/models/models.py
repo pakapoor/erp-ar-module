@@ -361,15 +361,21 @@ class JournalEntry(Base):
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
     tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenant.id"), nullable=False)
     entity_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("entity.id"), nullable=False)
-    period_id: Mapped[Optional[str]] = mapped_column(UUID(as_uuid=False), ForeignKey("accounting_period.id"), nullable=True)
+    period_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("accounting_period.id"), nullable=False)
     reference_type: Mapped[str] = mapped_column(String(50), nullable=False)  # INVOICE/PAYMENT/CREDIT_MEMO/MANUAL
     reference_id: Mapped[str] = mapped_column(UUID(as_uuid=False), nullable=False)
+    document_date: Mapped[date] = mapped_column(Date, nullable=False)
     entry_date: Mapped[date] = mapped_column(Date, nullable=False)
+    adjusts_period_id: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("accounting_period.id"), nullable=True
+    )
+    adjustment_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     is_reversed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     reversed_by: Mapped[Optional[str]] = mapped_column(UUID(as_uuid=False), ForeignKey("journal_entry.id"), nullable=True)
     created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("app_user.id"), nullable=False)
+    approved_by: Mapped[Optional[str]] = mapped_column(UUID(as_uuid=False), ForeignKey("app_user.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
     lines: Mapped[List["JournalEntryLine"]] = relationship("JournalEntryLine", back_populates="journal_entry")

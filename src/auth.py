@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 JWKS_URL = os.getenv("JWT_JWKS_URL", "http://stub:9000/.well-known/jwks.json")
 ALGORITHM = "RS256"
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 
 
 # ============================================================
@@ -95,10 +96,17 @@ def validate_jwt(token: str) -> CurrentUser:
         public_key = _get_public_key(kid)
 
         # Step 3+4: verify signature + expiry
+        key_algorithm = public_key.get("alg", ALGORITHM)
+        allowed_algorithms = {ALGORITHM}
+        if ENVIRONMENT == "development":
+            allowed_algorithms.add("HS256")
+        if key_algorithm not in allowed_algorithms:
+            raise credentials_exception
+
         payload = jwt.decode(
             token,
             public_key,
-            algorithms=[ALGORITHM],
+            algorithms=[key_algorithm],
             options={"verify_exp": True},
         )
 
@@ -172,11 +180,6 @@ def create_test_token(
     entity_id: str,
     roles: list[str],
 ) -> str:
-    """
-    Generate a test JWT for development.
-    NOT for production use.
-    Uses symmetric HS256 instead of RS256.
-    """
     import time
     payload = {
         "sub": user_id,
@@ -184,8 +187,12 @@ def create_test_token(
         "tenant_id": tenant_id,
         "entity_id": entity_id,
         "roles": roles,
-        "exp": int(time.time()) + 3600,  # 1 hour
+        "exp": int(time.time()) + 3600,
         "iat": int(time.time()),
     }
-    # In development, stub serves JWKS with test keys
-    return jwt.encode(payload, "dev-secret-key", algorithm="HS256")
+    return jwt.encode(
+        payload,
+        "dev-secret-key",
+        algorithm="HS256",
+        headers={"kid": "dev-key-001"}
+    )

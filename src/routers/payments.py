@@ -374,6 +374,7 @@ async def create_payment(
         entity_id=current_user.entity_id,
         reference_type="PAYMENT",
         reference_id=payment.id,
+        document_date=payload.payment_date,
         entry_date=payload.payment_date,
         description=f"Payment {payload.payment_reference} from customer {payload.customer_id}",
         currency=payload.currency,
