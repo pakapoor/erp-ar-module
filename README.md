@@ -50,8 +50,8 @@ For interview/review, follow this order:
 - Foreign-currency invoice/payment posting with locked rates and realized FX
   gain/loss in INR base-currency books
 - Serializable AUTO/MANUAL payment allocation with repeatable race controls
-- Credit-memo, write-off, and void routes with atomic GL entries and repeatable
-  INR happy-path/reconciliation tests; extended hardening is still pending
+- Credit-memo route with complete B6 controls; write-off and void routes with
+  atomic GL entries and repeatable INR happy-path/reconciliation tests
 
 Designed but deferred from the required prototype: production email/EDI/IRP
 delivery adapters, void-and-reissue orchestration, intercompany elimination,
@@ -70,7 +70,7 @@ acceptance tests are documented in
 | GET | /customers/{id}/aging | AR aging report |
 | GET | /journal-entries | GL entries for invoice |
 | GET | /health | Operational health and AR/GL reconciliation |
-| POST | /invoices/{id}/credit-memos | Experimental credit and AR reversal |
+| POST | /invoices/{id}/credit-memos | Verified credit, AR reduction, and customer liability |
 | POST | /invoices/{id}/writeoff | Experimental CFO bad-debt write-off |
 | POST | /invoices/{id}/void | Experimental draft void or posted reversal |
 
@@ -87,10 +87,12 @@ validation.
 `test_payment_concurrency.sh` independently races two distinct full receipts
 through both AUTO and MANUAL allocation. Exactly one transaction commits and
 the loser receives retryable HTTP 409 without leaving partial financial data.
-The suite now exercises basic INR credit-memo, draft-void and write-off paths
-and verifies final AR-to-GL reconciliation. Their extended entity, FX,
-concurrency and idempotency matrix is still required before the bonus workflows
-can be claimed production-hardened.
+
+`test_credit_memo.sh` verifies B6 entity isolation, idempotent replay and
+changed-payload rejection, concurrent over-credit prevention, paid and
+partially-paid liability handling, USD/INR accounting, API6 visibility,
+balanced journals, and final AR-to-GL reconciliation. Basic draft-void and
+write-off paths remain in `test_api.sh`; their extended matrices are pending.
 
 Detailed commands, database inspection queries, expected output, pg_cron
 verification, and an optional delivery-retry drill are in
@@ -119,6 +121,7 @@ erp-ar-module/
 ├── deploy.sh                    Safe build, migration, startup and verification
 ├── test_api.sh                  Repeatable API/control integration suite
 ├── test_payment_concurrency.sh  AUTO/MANUAL payment race controls
+├── test_credit_memo.sh          B6 accounting and concurrency controls
 ├── gateway/
 │   └── envoy.yaml               Public L7 gateway, JWT, tracing and rate limits
 ├── database/

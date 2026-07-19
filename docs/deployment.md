@@ -85,7 +85,8 @@ Run `./deploy.sh --help` for the same option summary.
 11. Start the internal AR application, outbox/FX workers, and Envoy gateway.
 12. Require health through Envoy and from the stub, verify both workers, and prove
     that FastAPI port 8080 is not published to the host.
-13. Optionally seed data and/or run `test_api.sh`.
+13. Optionally seed data and/or run the API, payment-concurrency, and
+    credit-memo suites.
 
 If a command fails, the script exits nonzero and prints container state plus the
 last 60 log lines from all services.

@@ -435,6 +435,7 @@ if [ "$RUN_TESTS" = true ]; then
   log "Running integration tests"
   ./test_api.sh
   ./test_payment_concurrency.sh
+  ./test_credit_memo.sh
 fi
 
 log "Deployment successful"

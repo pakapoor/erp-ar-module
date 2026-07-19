@@ -171,6 +171,7 @@ request/response fields and error contracts remain authoritative in
 - Required role: any authenticated user of the same entity
 - `invoice` query parameter required (SOX — must be traceable to source document)
 - Live query — journal entries immutable but must never appear missing (SOX!)
+- Includes approval, allocated-payment, and applied credit-memo journals
 - Returns both transaction-currency and base-currency amounts and verifies each balances
 - Page-based pagination (max 20 rows per invoice — cursor not needed)
 - Indexed on: tenant_id, reference_type + reference_id, entry_date

@@ -68,6 +68,17 @@ async def get_journal_entries(
                       AND je.tenant_id = :tenant_id
                       AND je.entity_id = :entity_id
                 )
+                OR id IN (
+                    SELECT je.id
+                    FROM journal_entry je
+                    JOIN credit_memo cm ON cm.id = je.reference_id
+                    WHERE je.reference_type = 'CREDIT_MEMO'
+                      AND cm.invoice_id = :invoice_id
+                      AND cm.tenant_id = :tenant_id
+                      AND cm.entity_id = :entity_id
+                      AND je.tenant_id = :tenant_id
+                      AND je.entity_id = :entity_id
+                )
               )
         """),
         {
@@ -94,6 +105,17 @@ async def get_journal_entries(
                     JOIN payment_allocation pa ON pa.payment_id = je.reference_id
                     WHERE je.reference_type = 'PAYMENT'
                       AND pa.invoice_id = :invoice_id
+                      AND je.tenant_id = :tenant_id
+                      AND je.entity_id = :entity_id
+                )
+                OR id IN (
+                    SELECT je.id
+                    FROM journal_entry je
+                    JOIN credit_memo cm ON cm.id = je.reference_id
+                    WHERE je.reference_type = 'CREDIT_MEMO'
+                      AND cm.invoice_id = :invoice_id
+                      AND cm.tenant_id = :tenant_id
+                      AND cm.entity_id = :entity_id
                       AND je.tenant_id = :tenant_id
                       AND je.entity_id = :entity_id
                 )
@@ -130,6 +152,17 @@ async def get_journal_entries(
                           ON pa.payment_id = je.reference_id
                         WHERE je.reference_type = 'PAYMENT'
                           AND pa.invoice_id = :invoice_id
+                          AND je.tenant_id = :tenant_id
+                          AND je.entity_id = :entity_id
+                    )
+                    OR id IN (
+                        SELECT je.id
+                        FROM journal_entry je
+                        JOIN credit_memo cm ON cm.id = je.reference_id
+                        WHERE je.reference_type = 'CREDIT_MEMO'
+                          AND cm.invoice_id = :invoice_id
+                          AND cm.tenant_id = :tenant_id
+                          AND cm.entity_id = :entity_id
                           AND je.tenant_id = :tenant_id
                           AND je.entity_id = :entity_id
                     )

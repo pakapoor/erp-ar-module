@@ -849,7 +849,8 @@ persisted daily snapshots. It cannot use the invoice's current
 
 Retrieves GL journal entries for an invoice.
 The `invoice` query parameter is required. Other filters are optional.
-Supports pagination for invoices with many entries.
+Supports pagination for invoices with many entries. The live invoice trail
+includes approval, allocated-payment, and applied credit-memo journals.
 
 **Required role:** Any authenticated user of the same entity. Cross-entity
 auditor access requires an explicit entity-membership model and is deferred;
@@ -1080,17 +1081,17 @@ No auth required — used by infrastructure.
 
 ## Bonus and Future APIs
 
-### Implemented bonus write APIs — acceptance pending
+### Implemented bonus write APIs
 
 | Route | Role | Atomic accounting effect | Current status |
 |---|---|---|---|
-| `POST /invoices/{id}/credit-memos` | `invoice_approver` or `cfo` | Dr Revenue/Tax, Cr AR | INR full-credit path tested |
+| `POST /invoices/{id}/credit-memos` | `invoice_approver` or `cfo` | Dr Revenue/Tax, Cr outstanding AR and/or Customer Credit liability | B6 extended matrix complete |
 | `POST /invoices/{id}/writeoff` | `cfo` | Dr Bad Debt Expense, Cr remaining AR | INR write-off path tested |
 | `POST /invoices/{id}/void` | `invoice_approver` or `cfo` | DRAFT: no GL; APPROVED/SENT: reverse Revenue/Tax/AR | DRAFT path tested; posted reversal pending |
 
-Each requires `X-Idempotency-Key`. Basic INR paths and post-command AR-to-GL
-reconciliation pass. Extended acceptance still requires entity/currency/
-concurrency, idempotent-retry and direct journal-balance controls.
+Each requires `X-Idempotency-Key`. Credit-memo entity/currency/concurrency,
+idempotent-retry, paid/partial and direct journal-balance controls pass. The
+same extended acceptance remains pending for write-off and void.
 
 ### Additional Write APIs (Phase 2)
 

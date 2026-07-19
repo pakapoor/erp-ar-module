@@ -46,6 +46,7 @@ container deliberately has no host-published port.
 ```bash
 ./test_api.sh
 ./test_payment_concurrency.sh
+./test_credit_memo.sh
 ```
 
 The script safely reruns because seed inserts use `ON CONFLICT DO NOTHING`, the
@@ -53,12 +54,15 @@ main walkthrough uses deterministic idempotency keys, and dynamically created
 concurrency invoices are settled to zero before exit. A rerun returns cached
 walkthrough responses without creating duplicate invoices, payments, or GL
 entries; it creates a fresh, settled invoice for each real concurrency race.
-`deploy.sh --test` runs both scripts.
+`deploy.sh --test` runs all three scripts.
 
-The automated suite also verifies basic INR credit-memo, DRAFT-void and
-write-off paths plus final reconciliation. Those bonus routes still require an
-extended entity/FX/concurrency/idempotency/direct-journal acceptance matrix
-before traceability can mark them complete.
+The B6 suite uses a dedicated control customer, so its intentionally
+outstanding concurrency balances cannot change Tata Steel's deterministic API5
+aging assertion. All resulting subledger balances remain reconciled to GL.
+
+The automated suite also verifies basic DRAFT-void and write-off paths plus
+final reconciliation. Credit-memo hardening has its own complete B6 suite;
+void and write-off still require their extended acceptance matrices.
 
 ### Assertions and expected results
 
@@ -101,6 +105,13 @@ before traceability can mark them complete.
 | NFR1 AUTO payment race | Same guarantee under FIFO allocation; isolated customer prevents unrelated invoices entering the race |
 | NFR1 reconciliation | Both freshly created control invoices finish at zero balance and health remains HTTP 200/MATCHED |
 | FR-B1 credit memo | Full INR credit reverses Revenue/Tax and clears its control invoice |
+| B6 entity isolation | A sibling-entity token receives HTTP 404 and creates no credit memo |
+| B6 idempotency | Same request returns the original credit memo; changed payload returns HTTP 409; one memo and journal exist |
+| B6 concurrency | Two INR 80 credits against INR 100 produce one HTTP 201 and one HTTP 422, leaving one journal and INR 20 AR |
+| B6 partially-paid invoice | Credit clears only remaining AR; excess credits GL 2100 Customer Credit liability |
+| B6 paid invoice | Credit leaves AR at zero and records the entire amount as Customer Credit liability |
+| B6 FX and API6 | USD revenue/tax reversal uses the locked invoice rate; API6 returns a journal balanced in USD and INR |
+| B6 reconciliation | Health remains HTTP 200/MATCHED after the complete credit-memo matrix |
 | FR-B3 DRAFT void | Invoice becomes VOID without creating a GL reversal |
 | FR-B2 write-off | CFO clears outstanding INR AR against Bad Debt Expense 4100 |
 | FR-B reconciliation | Health remains HTTP 200/MATCHED after all three lifecycle corrections |
@@ -109,6 +120,12 @@ The final line must be:
 
 ```text
 === All integration assertions passed ===
+```
+
+The focused B6 suite ends with:
+
+```text
+=== All B6 credit-memo assertions passed ===
 ```
 
 ## 3. Inspect the final financial state

@@ -78,8 +78,9 @@ retryable conflict and one financial posting.
 
 Credit memo, write-off and void accounting are documented in
 [Functional Requirements](FRs.md) and [Financial Controls](financial-controls.md).
-Their bonus routes have basic INR happy-path and reconciliation coverage, but
-are not represented as complete until the extended control matrix passes.
+Credit-memo B6 controls are complete. Write-off and void retain basic INR
+happy-path and reconciliation coverage and are not represented as complete
+until their extended control matrices pass.
 
 ## 4. State and Business Rules
 
@@ -94,9 +95,10 @@ APPROVED/SENT/PARTIALLY_PAID --partial payment--> PARTIALLY_PAID
 APPROVED/SENT/PARTIALLY_PAID --full payment--> PAID
 ```
 
-Bonus code also contains credit-memo balance reduction, CFO write-off to
-WRITTEN_OFF, and DRAFT/APPROVED/SENT void paths. These remain test-pending and
-do not widen the verified core lifecycle claim above.
+The bonus credit-memo path is fully verified for entity isolation, FX,
+paid/partial balances, concurrency, idempotency, journal visibility and
+reconciliation. CFO write-off and DRAFT/APPROVED/SENT void paths remain only
+partially verified and do not widen the required core lifecycle claim above.
 
 Approval requires a separate approver, an OPEN document-date period, an idempotency key, and the current invoice version through `If-Match`. Approval and payment create their GL entries atomically. Approval also writes a delivery outbox event in the same transaction; the worker later records SENT without making notification success a prerequisite for the receivable.
 
@@ -111,9 +113,9 @@ Approval requires a separate approver, an OPEN document-date period, an idempote
 | Customer aging | `GET /api/v1/customers/{id}/aging` | INR 74,000 current bucket asserted |
 | Invoice journals | `GET /api/v1/journal-entries?invoice={id}` | Two balanced entries and net AR asserted |
 
-Bonus credit-memo, DRAFT-void and write-off happy paths pass with final
-reconciliation. Extended controls remain `IN PROGRESS`, separate from the
-required API table's completion claim.
+Bonus credit-memo controls are complete. DRAFT-void and write-off happy paths
+pass with final reconciliation, but their extended controls remain
+`IN PROGRESS`, separate from the required API table's completion claim.
 
 Operational extension: `GET /health` checks database access, materialized-view age, and AR-to-GL reconciliation.
 
@@ -257,9 +259,8 @@ prototype.
   isolation, overpayment, stale versions, simultaneous approval, and real AUTO
   and MANUAL full-payment races. This is a deterministic two-request control,
   not a representative production load test.
-- Credit memo, write-off and void routes require dedicated entity, currency,
-  concurrency, idempotency, balanced-journal and reconciliation tests before
-  they can be marked complete.
+- Write-off and void routes require dedicated entity, currency, concurrency,
+  idempotency, balanced-journal and reconciliation tests before completion.
 - RLS needs a non-owner runtime role plus `FORCE ROW LEVEL SECURITY` for production-grade defense in depth.
 - Journal immutability and aggregate balancing need database privilege/constraint enforcement.
 - The custom PostgreSQL image loads pg_cron. One job owned by the `postgres` system database refreshes `erp_db.ar_aging` concurrently every five minutes; the integration test also refreshes explicitly for deterministic assertions.

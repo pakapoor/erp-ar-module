@@ -1,24 +1,21 @@
 import hashlib
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, and_, text
+from sqlalchemy import select, and_, text, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
 from src.auth import CurrentUser, require_role
 from src.models import (
     Invoice, CreditMemo, JournalEntry, JournalEntryLine,
-    GLAccount, AccountingPeriod, IdempotencyKey
+    GLAccount, AccountingPeriod
 )
-from src.exceptions import (
-    BusinessRuleException, PeriodClosedException,
-    IdempotencyConflictException
-)
+from src.exceptions import BusinessRuleException, PeriodClosedException
 from src.routers.invoices import (
     check_idempotency, create_idempotency_key,
     complete_idempotency_key,
@@ -30,6 +27,7 @@ router = APIRouter()
 
 # GL account for bad debt (used in write-off)
 GL_BAD_DEBT = "4100"
+GL_CUSTOMER_CREDIT = "2100"
 
 # Invoice statuses that allow credit memo
 CM_ALLOWED_STATUSES = ["APPROVED", "SENT", "PARTIALLY_PAID", "PAID"]
@@ -85,14 +83,15 @@ async def create_credit_memo(
     GL entry on approval:
         Debit  Revenue       subtotal_amount   <- un-earn revenue
         Debit  Tax Payable   tax_amount        <- reverse tax liability
-        Credit AR            total_amount      <- reduce receivable
+        Credit AR            outstanding part  <- reduce receivable
+        Credit Customer Credit paid part       <- liability/refund due
 
     Allowed against: APPROVED, SENT, PARTIALLY_PAID, PAID
     Not allowed against: DRAFT, VOID, WRITTEN_OFF
     """
     endpoint_name = f"POST /invoices/{invoice_id}/credit-memos"
     reason_code = payload.get("reason_code", "").upper()
-    description = payload.get("description", "")
+    description = str(payload.get("description") or "")
     amount = Decimal(str(payload.get("amount", 0)))
     include_tax = payload.get("include_tax", False)
 
@@ -103,19 +102,30 @@ async def create_credit_memo(
         )
     if amount <= 0:
         raise BusinessRuleException("INVALID_AMOUNT", "Credit memo amount must be positive")
+    if not isinstance(include_tax, bool):
+        raise BusinessRuleException("INVALID_INCLUDE_TAX", "include_tax must be true or false")
 
     await set_audit_context(db, current_user)
 
     # ── Idempotency check ──────────────────────────────────
     request_hash = hashlib.sha256(
-        json.dumps({"invoice_id": invoice_id, "amount": str(amount),
-                    "reason": reason_code}, default=str).encode()
+        json.dumps(
+            {
+                "invoice_id": invoice_id,
+                "amount": str(amount),
+                "reason_code": reason_code,
+                "description": description,
+                "include_tax": include_tax,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
     ).hexdigest()
 
     existing = await check_idempotency(
         db, x_idempotency_key, current_user.tenant_id,
         current_user.entity_id,
-        f"POST /invoices/{invoice_id}/credit-memos", request_hash
+        endpoint_name, request_hash
     )
     if existing:
         return JSONResponse(status_code=existing.response_status,
@@ -123,14 +133,35 @@ async def create_credit_memo(
 
     # ── Fetch invoice ──────────────────────────────────────
     result = await db.execute(
-        select(Invoice).where(
-            and_(Invoice.id == invoice_id,
-                 Invoice.tenant_id == current_user.tenant_id)
+        select(Invoice)
+        .where(
+            and_(
+                Invoice.id == invoice_id,
+                Invoice.tenant_id == current_user.tenant_id,
+                Invoice.entity_id == current_user.entity_id,
+            )
         )
+        .with_for_update()
     )
     invoice = result.scalar_one_or_none()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # A concurrent request can pass the first idempotency read before the
+    # winning request commits. Re-check after acquiring the invoice row lock.
+    existing = await check_idempotency(
+        db,
+        x_idempotency_key,
+        current_user.tenant_id,
+        current_user.entity_id,
+        endpoint_name,
+        request_hash,
+    )
+    if existing:
+        return JSONResponse(
+            status_code=existing.response_status,
+            content=existing.response_body,
+        )
 
     if invoice.status not in CM_ALLOWED_STATUSES:
         raise BusinessRuleException(
@@ -138,11 +169,102 @@ async def create_credit_memo(
             f"Credit memo not allowed against invoice in status: {invoice.status}"
         )
 
-    if amount > invoice.total_amount:
+    if invoice.created_by == current_user.user_id:
         raise BusinessRuleException(
-            "AMOUNT_EXCEEDS_INVOICE",
-            f"Credit memo amount {amount} exceeds invoice total {invoice.total_amount}"
+            "SOX_VIOLATION",
+            "Credit memo approver cannot be the invoice creator",
         )
+
+    # Prior applied credit memos are read while this invoice row is locked, so
+    # two concurrent requests cannot reverse more than the original invoice.
+    prior_reversal_result = await db.execute(
+        select(
+            GLAccount.account_code,
+            func.sum(JournalEntryLine.debit_amount),
+        )
+        .select_from(CreditMemo)
+        .join(
+            JournalEntry,
+            and_(
+                JournalEntry.reference_type == "CREDIT_MEMO",
+                JournalEntry.reference_id == CreditMemo.id,
+            ),
+        )
+        .join(
+            JournalEntryLine,
+            JournalEntryLine.journal_entry_id == JournalEntry.id,
+        )
+        .join(GLAccount, GLAccount.id == JournalEntryLine.gl_account_id)
+        .where(
+            and_(
+                CreditMemo.invoice_id == invoice_id,
+                CreditMemo.tenant_id == current_user.tenant_id,
+                CreditMemo.entity_id == current_user.entity_id,
+                CreditMemo.status == "APPLIED",
+                GLAccount.account_code.in_([GL_REVENUE, GL_TAX_PAYABLE]),
+            )
+        )
+        .group_by(GLAccount.account_code)
+    )
+    prior_reversals = {
+        account_code: Decimal(str(reversed_amount))
+        for account_code, reversed_amount in prior_reversal_result.all()
+    }
+    remaining_subtotal = max(
+        invoice.subtotal_amount - prior_reversals.get(GL_REVENUE, Decimal("0")),
+        Decimal("0"),
+    )
+    remaining_tax = max(
+        invoice.tax_amount - prior_reversals.get(GL_TAX_PAYABLE, Decimal("0")),
+        Decimal("0"),
+    )
+    remaining_creditable = remaining_subtotal + remaining_tax
+
+    if amount > remaining_creditable:
+        raise BusinessRuleException(
+            "AMOUNT_EXCEEDS_CREDITABLE",
+            f"Credit memo amount {amount} exceeds remaining creditable amount {remaining_creditable}",
+        )
+
+    # Split a tax-inclusive credit using the remaining unreversed composition.
+    # A final credit consumes the exact residuals, avoiding rounding drift.
+    if include_tax and remaining_creditable > 0:
+        if amount == remaining_creditable:
+            subtotal_credit = remaining_subtotal
+            tax_credit = remaining_tax
+        else:
+            tax_ratio = remaining_tax / remaining_creditable
+            tax_credit = (amount * tax_ratio).quantize(Decimal("0.0001"))
+            subtotal_credit = amount - tax_credit
+    else:
+        tax_credit = Decimal("0")
+        subtotal_credit = amount
+
+    if subtotal_credit > remaining_subtotal or tax_credit > remaining_tax:
+        raise BusinessRuleException(
+            "CREDIT_COMPONENT_EXCEEDED",
+            "Credit memo would reverse more revenue or tax than remains on the invoice",
+        )
+
+    rate = invoice.exchange_rate or Decimal("1")
+    base_credit = (amount * rate).quantize(Decimal("0.0001"))
+    base_tax_credit = (tax_credit * rate).quantize(Decimal("0.0001"))
+    base_subtotal_credit = base_credit - base_tax_credit
+
+    balance_before = invoice.balance_amount
+    base_balance_before = invoice.base_balance_amount
+    ar_credit = min(amount, balance_before)
+    customer_credit = amount - ar_credit
+    if ar_credit == balance_before:
+        base_ar_credit = base_balance_before
+    else:
+        base_ar_credit = min(
+            (ar_credit * rate).quantize(Decimal("0.0001")),
+            base_balance_before,
+        )
+    base_customer_credit = base_credit - base_ar_credit
+    new_balance = balance_before - ar_credit
+    new_base_balance = base_balance_before - base_ar_credit
 
     # ── Period check ───────────────────────────────────────
     period_result = await db.execute(
@@ -162,34 +284,39 @@ async def create_credit_memo(
     gl_result = await db.execute(
         select(GLAccount).where(
             and_(
+                GLAccount.tenant_id == current_user.tenant_id,
                 GLAccount.entity_id == current_user.entity_id,
-                GLAccount.account_code.in_([GL_AR, GL_REVENUE, GL_TAX_PAYABLE]),
+                GLAccount.account_code.in_([
+                    GL_AR,
+                    GL_REVENUE,
+                    GL_TAX_PAYABLE,
+                    GL_CUSTOMER_CREDIT,
+                ]),
             )
         )
     )
     gl_accounts = {gl.account_code: gl for gl in gl_result.scalars().all()}
 
+    required_accounts = {GL_REVENUE: "Sales Revenue GL account (3100)"}
+    if tax_credit > 0:
+        required_accounts[GL_TAX_PAYABLE] = "Tax Payable GL account (2200)"
+    if ar_credit > 0:
+        required_accounts[GL_AR] = "Accounts Receivable GL account (1200)"
+    if customer_credit > 0:
+        required_accounts[GL_CUSTOMER_CREDIT] = "Customer Credit liability GL account (2100)"
+    for account_code, account_label in required_accounts.items():
+        if account_code not in gl_accounts:
+            raise BusinessRuleException(
+                "GL_ACCOUNT_MISSING",
+                f"{account_label} not found for entity {current_user.entity_id}",
+            )
+
     # ── Begin idempotency ──────────────────────────────────
     await create_idempotency_key(
         db, x_idempotency_key, current_user.tenant_id,
         current_user.entity_id,
-        f"POST /invoices/{invoice_id}/credit-memos", request_hash
+        endpoint_name, request_hash
     )
-
-    # ── Calculate tax portion ──────────────────────────────
-    # Tax is proportional to the credit amount vs invoice total
-    if include_tax and invoice.total_amount > 0:
-        tax_ratio = invoice.tax_amount / invoice.total_amount
-        tax_credit = (amount * tax_ratio).quantize(Decimal("0.0001"))
-        subtotal_credit = amount - tax_credit
-    else:
-        tax_credit = Decimal("0")
-        subtotal_credit = amount
-
-    rate = invoice.exchange_rate or Decimal("1")
-    base_credit = (amount * rate).quantize(Decimal("0.0001"))
-    base_tax_credit = (tax_credit * rate).quantize(Decimal("0.0001"))
-    base_subtotal_credit = base_credit - base_tax_credit
 
     now = datetime.utcnow()
 
@@ -215,7 +342,8 @@ async def create_credit_memo(
     # ── Generate GL journal entry ──────────────────────────
     # Dr Revenue       subtotal_credit   <- un-earn
     # Dr Tax Payable   tax_credit        <- reverse tax (if applicable)
-    # Cr AR            amount            <- reduce receivable
+    # Cr AR            outstanding part  <- reduce receivable
+    # Cr Customer Credit paid part       <- liability/refund due
     journal_entry = JournalEntry(
         tenant_id=current_user.tenant_id,
         entity_id=current_user.entity_id,
@@ -232,20 +360,19 @@ async def create_credit_memo(
     await db.flush()
 
     # Dr: Revenue (un-earn)
-    if GL_REVENUE in gl_accounts:
-        db.add(JournalEntryLine(
-            tenant_id=current_user.tenant_id,
-            journal_entry_id=journal_entry.id,
-            gl_account_id=gl_accounts[GL_REVENUE].id,
-            description="Revenue reversed",
-            debit_amount=subtotal_credit,
-            credit_amount=Decimal("0"),
-            base_debit_amount=base_subtotal_credit,
-            base_credit_amount=Decimal("0"),
-        ))
+    db.add(JournalEntryLine(
+        tenant_id=current_user.tenant_id,
+        journal_entry_id=journal_entry.id,
+        gl_account_id=gl_accounts[GL_REVENUE].id,
+        description="Revenue reversed",
+        debit_amount=subtotal_credit,
+        credit_amount=Decimal("0"),
+        base_debit_amount=base_subtotal_credit,
+        base_credit_amount=Decimal("0"),
+    ))
 
     # Dr: Tax Payable (reverse if applicable)
-    if tax_credit > 0 and GL_TAX_PAYABLE in gl_accounts:
+    if tax_credit > 0:
         db.add(JournalEntryLine(
             tenant_id=current_user.tenant_id,
             journal_entry_id=journal_entry.id,
@@ -258,23 +385,33 @@ async def create_credit_memo(
         ))
 
     # Cr: AR (reduce receivable)
-    if GL_AR in gl_accounts:
+    if ar_credit > 0:
         db.add(JournalEntryLine(
             tenant_id=current_user.tenant_id,
             journal_entry_id=journal_entry.id,
             gl_account_id=gl_accounts[GL_AR].id,
             description="AR reduced by credit memo",
             debit_amount=Decimal("0"),
-            credit_amount=amount,
+            credit_amount=ar_credit,
             base_debit_amount=Decimal("0"),
-            base_credit_amount=base_credit,
+            base_credit_amount=base_ar_credit,
+        ))
+
+    # A credit beyond outstanding AR is money owed back to the customer. Keep
+    # it as a liability until refunded or applied to another invoice.
+    if customer_credit > 0:
+        db.add(JournalEntryLine(
+            tenant_id=current_user.tenant_id,
+            journal_entry_id=journal_entry.id,
+            gl_account_id=gl_accounts[GL_CUSTOMER_CREDIT].id,
+            description="Credit memo held on customer account",
+            debit_amount=Decimal("0"),
+            credit_amount=customer_credit,
+            base_debit_amount=Decimal("0"),
+            base_credit_amount=base_customer_credit,
         ))
 
     # ── Update invoice balance ─────────────────────────────
-    balance_before = invoice.balance_amount
-    base_balance_before = invoice.base_balance_amount
-    new_balance = max(balance_before - amount, Decimal("0"))
-    new_base_balance = max(base_balance_before - base_credit, Decimal("0"))
     invoice.balance_amount = new_balance
     invoice.base_balance_amount = new_base_balance
     invoice.version += 1
@@ -300,6 +437,10 @@ async def create_credit_memo(
         "base_amount": str(base_credit),
         "base_balance_before": str(base_balance_before),
         "base_balance_after": str(new_base_balance),
+        "ar_reduction": str(ar_credit),
+        "base_ar_reduction": str(base_ar_credit),
+        "customer_credit_amount": str(customer_credit),
+        "base_customer_credit_amount": str(base_customer_credit),
         "invoice_status": invoice.status,
         "journal_entry_id": journal_entry.id,
         "approved_by": current_user.user_id,

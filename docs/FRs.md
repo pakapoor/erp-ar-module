@@ -287,8 +287,8 @@ Net FX Gain: ₹3,000
 A credit memo is issued to correct an approved/sent/paid invoice. It cannot be raised against draft or void invoices. Credit memos have their own approval lifecycle. On approval, GL entries are automatically reversed.
 
 **Prototype status:** Bonus route implemented at
-`POST /invoices/{id}/credit-memos`; the repeatable INR full-credit and
-reconciliation path passes. Extended acceptance/hardening remains `IN PROGRESS`.
+`POST /invoices/{id}/credit-memos`; the full B6 entity, FX, paid/partial,
+concurrency, idempotency, direct-journal and reconciliation matrix passes.
 
 **Reasons:**
 - OVERCHARGE → wrong price
@@ -318,6 +318,11 @@ Credit: 1200 AR        ₹10,000  ← Tata Steel owes less
 
 If the credited amount includes tax, reverse the corresponding Tax Payable
 amount as a separate debit rather than treating tax as revenue.
+
+The credit reduces AR only up to the invoice's outstanding balance. Any amount
+already paid is credited to GL 2100 Customer Credit, creating a liability until
+it is refunded or applied elsewhere. The invoice row is locked and cumulative
+Revenue/Tax reversals are capped at the original posted amounts.
 
 Net Tata Steel owes: ₹1,64,000
 
