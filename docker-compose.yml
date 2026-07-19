@@ -1,0 +1,47 @@
+services:
+
+  db:
+    image: postgres:16
+    container_name: erp_db
+    environment:
+      POSTGRES_USER: erp_user
+      POSTGRES_PASSWORD: erp_password
+      POSTGRES_DB: erp_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp_user -d erp_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: erp_app
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://erp_user:erp_password@db:5432/erp_db
+      JWT_JWKS_URL: http://stub:9000/.well-known/jwks.json
+      ENVIRONMENT: development
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  stub:
+    build:
+      context: .
+      dockerfile: Dockerfile.stub
+    container_name: erp_stub
+    ports:
+      - "9000:9000"
+    command: uvicorn src.stub:app --host 0.0.0.0 --port 9000 --reload
+
+volumes:
+  postgres_data:
