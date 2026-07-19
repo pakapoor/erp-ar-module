@@ -46,6 +46,10 @@ new_uuid() {
 echo "=== Setup: seed data and runtime JWTs ==="
 docker compose exec -T app python -m src.seed_data >/dev/null
 
+echo "=== FX feed contract: deterministic ECB parser/derivation ==="
+docker compose exec -T app python -m unittest -q src.tests.test_fx_rate_worker
+echo "PASS: ECB CSV validation and INR cross-rate derivation"
+
 TOKEN="$(docker compose exec -T app python -c "
 from src.auth import create_test_token
 print(create_test_token(

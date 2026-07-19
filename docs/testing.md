@@ -167,6 +167,34 @@ The FX worker claims the import, validates one coherent ECB batch, derives
 foreign→INR pairs, and stores tenant-approved immutable rows. B1 remains
 `IN PROGRESS` until invoice/payment accounting and deterministic FX tests pass.
 
+Deterministic feed tests:
+
+```bash
+docker compose exec -T app \
+  python -m unittest -q src.tests.test_fx_rate_worker
+```
+
+Expected: four tests pass, covering the cross-rate formula plus rejection of a
+missing currency, mixed provider dates and nonpositive quotes.
+
+Inspect the optional live import (internet availability is deliberately not a
+gate for the deterministic suite):
+
+```bash
+docker compose logs --tail=30 fx_rate_worker
+docker compose exec -T db psql -U erp_user -d erp_db -P pager=off -c "
+SELECT provider, requested_date, provider_effective_date, status, attempt_count
+FROM fx_import_job ORDER BY requested_date DESC LIMIT 3;
+SELECT from_currency, to_currency, rate, effective_date, source, status
+FROM exchange_rate WHERE source = 'ECB'
+ORDER BY effective_date DESC, from_currency;
+"
+```
+
+On a successful import, the latest job is `COMPLETED` and the configured tenant
+has seven approved foreign→INR rows. A weekend request legitimately uses the
+preceding Friday within the three-day policy.
+
 Execution history:
 
 ```bash
