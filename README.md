@@ -18,6 +18,7 @@ Built as part of a Principal Engineer technical assessment for DeepRunner.ai.
 
 ## Design Walkthrough
 For interview/review, follow this order:
+- [10-Minute Interview Walkthrough](docs/interview-walkthrough.md)
 - [Functional Requirements](docs/FRs.md)
 - [Non Functional Requirements](docs/NFRs.md)
 - [Assessment Requirements Traceability](docs/requirements-traceability.md)
@@ -175,6 +176,7 @@ erp-ar-module/
 │       └── health.py            Database, MV and AR/GL reconciliation health
 └── docs/
     ├── requirements-traceability.md  Living assessment coverage matrix
+    ├── interview-walkthrough.md       10-minute narrative, Q&A and live changes
     ├── high-level-design.md           Component/API architecture
     ├── flows/                         Happy-path diagrams for APIs 1–6
     ├── fx-rate-design.md              Approved multi-currency design
