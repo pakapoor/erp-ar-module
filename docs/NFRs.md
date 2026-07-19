@@ -241,7 +241,10 @@ Health checks + auto restart
 
 ## NFR4 — Security
 
-System must protect data in transit and at rest. Access controlled via RBAC (FR16) and tenant isolation (FR10). PII fields encrypted at column level. All communication over HTTPS. Security implemented via managed services — complexity owned by platform, not application code.
+System must protect data in transit and at rest. Access is controlled via RBAC
+(FR14) and tenant isolation (FR10). PII fields are encrypted at column level.
+All communication uses HTTPS in production. Security is implemented through
+managed services so platform components own key and certificate complexity.
 
 **In Transit:**
 ```

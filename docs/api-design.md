@@ -1150,12 +1150,12 @@ same extended acceptance remains pending for write-off and void.
 
 ```
 POST /invoices/{id}/send          ← FR3: send invoice to customer
-POST /journal-entries/manual      ← FR-B5: manual journal entry
-POST /periods/{id}/close          ← FR10: close accounting period
-POST /periods/{id}/reopen         ← FR10: CFO reopens CLOSED period with reason
-POST /periods/{id}/lock           ← FR10: lock accounting period
-POST /users                       ← FR11: create user
-POST /users/{id}/roles            ← FR11: assign role
+POST /journal-entries/manual      ← Future-FR2: manual journal entry
+POST /periods/{id}/close          ← Future-FR3: close accounting period
+POST /periods/{id}/reopen         ← Future-FR3: CFO reopens CLOSED with reason
+POST /periods/{id}/lock           ← Future-FR3: lock accounting period
+POST /users                       ← Future-FR4: create user
+POST /users/{id}/roles            ← Future-FR4: assign role
 ```
 
 ### Bulk Operations (Phase 2)
@@ -1170,7 +1170,7 @@ GET  /jobs/{job_id}               ← poll async job status
 ### Reporting APIs (Phase 2)
 
 ```
-GET /reports/consolidated         ← FR-B4: consolidated multi-entity report
-GET /reports/reconciliation       ← FR6: AR vs GL reconciliation status
-GET /audit-log                    ← FR9: SOX audit trail
+GET /reports/consolidated         ← Future-FR1: intercompany consolidation
+GET /reports/reconciliation       ← FR9: AR vs GL reconciliation status
+GET /audit-log                    ← FR12: SOX audit trail
 ```

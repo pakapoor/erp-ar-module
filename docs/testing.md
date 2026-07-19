@@ -107,7 +107,7 @@ void and write-off still require their extended acceptance matrices.
 | NFR1 MANUAL payment race | Exactly one HTTP 201 and one retryable 409; one allocation/journal; SENT v3 advances once to PAID v4 |
 | NFR1 AUTO payment race | Same guarantee under FIFO allocation; isolated customer prevents unrelated invoices entering the race |
 | NFR1 reconciliation | Both freshly created control invoices finish at zero balance and health remains HTTP 200/MATCHED |
-| FR-B1 credit memo | Full INR credit reverses Revenue/Tax and clears its control invoice |
+| FR5 credit memo | Full INR credit reverses Revenue/Tax and clears its control invoice |
 | B6 entity isolation | A sibling-entity token receives HTTP 404 and creates no credit memo |
 | B6 idempotency | Same request returns the original credit memo; changed payload returns HTTP 409; one memo and journal exist |
 | B6 concurrency | Two INR 80 credits against INR 100 produce one HTTP 201 and one HTTP 422, leaving one journal and INR 20 AR |
@@ -115,8 +115,8 @@ void and write-off still require their extended acceptance matrices.
 | B6 paid invoice | Credit leaves AR at zero and records the entire amount as Customer Credit liability |
 | B6 FX and API6 | USD revenue/tax reversal uses the locked invoice rate; API6 returns a journal balanced in USD and INR |
 | B6 reconciliation | Health remains HTTP 200/MATCHED after the complete credit-memo matrix |
-| FR-B3 DRAFT void | Invoice becomes VOID without creating a GL reversal |
-| FR-B2 write-off | CFO clears outstanding INR AR against Bad Debt Expense 4100 |
+| FR7 DRAFT void | Invoice becomes VOID without creating a GL reversal |
+| FR6 write-off | CFO clears outstanding INR AR against Bad Debt Expense 4100 |
 | FR-B reconciliation | Health remains HTTP 200/MATCHED after all three lifecycle corrections |
 | SQS happy path | Approval event records a broker ID and reaches DELIVERED through LocalStack |
 | Delivery isolation | Sibling-entity delivery status returns HTTP 404 |

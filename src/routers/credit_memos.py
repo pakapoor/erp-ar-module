@@ -67,7 +67,7 @@ async def set_audit_context(db: AsyncSession, current_user: CurrentUser) -> None
 
 # ============================================================
 # API: POST /invoices/{id}/credit-memos
-# FR-B1 — Credit Memo
+# FR5 — Credit Memo
 # ============================================================
 @router.post("/invoices/{invoice_id}/credit-memos", status_code=status.HTTP_201_CREATED)
 async def create_credit_memo(
@@ -78,7 +78,7 @@ async def create_credit_memo(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    FR-B1 — Create and approve a credit memo against an invoice.
+    FR5 — Create and approve a credit memo against an invoice.
 
     GL entry on approval:
         Debit  Revenue       subtotal_amount   <- un-earn revenue
@@ -456,7 +456,7 @@ async def create_credit_memo(
 
 # ============================================================
 # API: POST /invoices/{id}/writeoff
-# FR-B2 — Write-off
+# FR6 — Write-off
 # ============================================================
 @router.post("/invoices/{invoice_id}/writeoff", status_code=status.HTTP_201_CREATED)
 async def write_off_invoice(
@@ -467,7 +467,7 @@ async def write_off_invoice(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    FR-B2 — Write off an invoice outstanding balance.
+    FR6 — Write off an invoice outstanding balance.
     Only CFO can approve write-offs (revenue impact).
 
     GL entry:
@@ -640,7 +640,7 @@ async def write_off_invoice(
 
 # ============================================================
 # API: POST /invoices/{id}/void
-# FR-B3 — Invoice Void
+# FR7 — Invoice Void
 # ============================================================
 @router.post("/invoices/{invoice_id}/void", status_code=status.HTTP_200_OK)
 async def void_invoice(
@@ -651,7 +651,7 @@ async def void_invoice(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    FR-B3 — Void an invoice.
+    FR7 — Void an invoice.
     Invoice was raised in error — should never have existed.
 
     GL entry (only if invoice was already APPROVED/SENT):

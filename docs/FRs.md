@@ -5,18 +5,20 @@
 - [FR2 — Invoice Approval](#fr2--invoice-approval)
 - [FR3 — Invoice Sending](#fr3--invoice-sending)
 - [FR4 — Payment Recording and Allocation](#fr4--payment-recording-and-allocation)
-- [FR-B1 — Credit Memo](#fr-b1--credit-memo)
-- [FR-B2 — Write-off](#fr-b2--write-off)
-- [FR-B3 — Invoice Void](#fr-b3--invoice-void)
-- [FR5 — AR Aging Report](#fr5--ar-aging-report)
-- [FR6 — GL Journal Entries and Reconciliation](#fr6--gl-journal-entries-and-reconciliation)
-- [FR7 — Multi-tenant Isolation](#fr7--multi-tenant-isolation)
-- [FR8 — Multi-currency](#fr8--multi-currency)
-- [FR9 — Audit Trail](#fr9--audit-trail)
-- [FR10 — Period Close](#fr10--period-close)
-- [FR-B4 — Multi-entity and Intercompany](#fr-b4--multi-entity-and-intercompany)
-- [FR-B5 — Manual Journal Entry](#fr-b5--manual-journal-entry)
-- [FR11 — User Management and RBAC](#fr11--user-management-and-rbac)
+- [FR5 — Credit Memo](#fr5--credit-memo)
+- [FR6 — Write-off](#fr6--write-off)
+- [FR7 — Invoice Void](#fr7--invoice-void)
+- [FR8 — AR Aging Report](#fr8--ar-aging-report)
+- [FR9 — GL Journal Entries and Reconciliation](#fr9--gl-journal-entries-and-reconciliation)
+- [FR10 — Multi-tenant Isolation](#fr10--multi-tenant-isolation)
+- [FR11 — Multi-currency](#fr11--multi-currency)
+- [FR12 — Audit Trail](#fr12--audit-trail)
+- [FR13 — Accounting Period Enforcement](#fr13--accounting-period-enforcement)
+- [FR14 — RBAC and Segregation of Duties](#fr14--rbac-and-segregation-of-duties)
+- [Future-FR1 — Intercompany Consolidation](#future-fr1--intercompany-consolidation)
+- [Future-FR2 — Manual Journal Entry](#future-fr2--manual-journal-entry)
+- [Future-FR3 — Period Management APIs](#future-fr3--period-management-apis)
+- [Future-FR4 — User Management APIs](#future-fr4--user-management-apis)
 
 ---
 
@@ -285,11 +287,11 @@ Net FX Gain: ₹3,000
 
 ---
 
-## FR-B1 — Credit Memo
+## FR5 — Credit Memo
 
 A credit memo is issued to correct an approved/sent/paid invoice. It cannot be raised against draft or void invoices. Credit memos have their own approval lifecycle. On approval, GL entries are automatically reversed.
 
-**Prototype status:** Bonus route implemented at
+**Implementation status:** Route implemented at
 `POST /invoices/{id}/credit-memos`; the full B6 entity, FX, paid/partial,
 concurrency, idempotency, direct-journal and reconciliation matrix passes.
 
@@ -339,11 +341,11 @@ States: Draft → Approved → Applied
 
 ---
 
-## FR-B2 — Write-off
+## FR6 — Write-off
 
 A write-off is raised when a customer cannot pay (bankruptcy, absconding, bad debt). It removes the outstanding amount from AR and records it as Bad Debt Expense. Requires CFO approval due to revenue impact. Write-off applies only to outstanding balance — already paid amount is never reversed.
 
-**Prototype status:** CFO-only bonus route implemented at
+**Implementation status:** CFO-only route implemented at
 `POST /invoices/{id}/writeoff`; its INR happy path and final reconciliation
 pass, while extended acceptance/hardening remains pending.
 
@@ -390,11 +392,11 @@ Invoice Status: Written Off
 
 ---
 
-## FR-B3 — Invoice Void
+## FR7 — Invoice Void
 
 An invoice is voided when it should never have been raised or was raised in error. Void is different from write-off — write-off is customer cannot pay, void is invoice itself was wrong. Cannot void a paid or partially paid invoice — use credit memo instead.
 
-**Prototype status:** Bonus void route implemented at
+**Implementation status:** Void route implemented at
 `POST /invoices/{id}/void`; DRAFT-without-GL is tested. Posted-reversal
 acceptance remains pending, and automatic reissue remains Phase 2.
 
@@ -432,7 +434,7 @@ Invoice Status: Void ✅
 
 ---
 
-## FR5 — AR Aging Report
+## FR8 — AR Aging Report
 
 System must generate AR aging report showing outstanding invoice balances grouped by days overdue. Used by CFO and collections team to track overdue payments and identify write-off candidates.
 
@@ -482,9 +484,12 @@ Invoice detail:
 
 ---
 
-## FR6 — GL Journal Entries and Reconciliation
+## FR9 — GL Journal Entries and Reconciliation
 
-System must maintain complete journal entry trail for every financial event. All journal entries must be immutable. AR subledger must reconcile to GL at all times. Nightly reconciliation job detects and alerts on any mismatch.
+The system maintains a complete journal-entry trail for every implemented
+financial event. API6 exposes the entries with cursor pagination, and the
+health reconciliation check compares the AR subledger with the AR control
+account. A scheduled reconciliation and alerting job is future hardening.
 
 ```
 GET /journal-entries?invoice=1001
@@ -500,7 +505,7 @@ Jan 25     | JE003 | Credit Memo      | 3100 Rev ₹10,000   | 1200 AR ₹10,000
 Net AR outstanding: ₹64,000
 ```
 
-**Nightly Reconciliation:**
+**Reconciliation Check:**
 ```
 Reconciliation Job — Jan 31, 2024 02:00am
 
@@ -532,20 +537,21 @@ COMMIT
 ```
 
 **Journal Entry Rules:**
-- Immutable — never update, never delete
+- Application code treats posted entries as append-only
 - Always balanced — debits = credits
 - Always referenced — every JE links to source document
-- Retained 7 years — SOX compliance (S3 WORM)
+- Long-term immutable retention is production hardening
 
 ### Future Enhancements (Phase 2)
-- Real time reconciliation (vs nightly batch)
+- Scheduled reconciliation, alerting and operational ownership
+- Database privilege hardening to prohibit journal update/delete
 - Automated mismatch correction
 - Kafka → S3 WORM archival for 7 year retention
 - Reconciliation dashboard
 
 ---
 
-## FR7 — Multi-tenant Isolation
+## FR10 — Multi-tenant Isolation
 
 System must completely isolate data between tenants. No tenant can ever see another tenant's data. Isolation enforced at both application layer (JWT) and database layer (Row Level Security). Every table contains tenant_id. Every query filters by tenant_id.
 
@@ -608,7 +614,7 @@ ERP: WHERE tenant_id=X AND entity_id=Y
 
 ---
 
-## FR8 — Multi-currency
+## FR11 — Multi-currency
 
 **Implementation status:** `COMPLETE` for V1 — ingestion, invoice/payment rate
 snapshots, base-currency journals, realized gain/loss, partial payments and
@@ -701,9 +707,12 @@ Audit trail:  Records immutable rate ID, value, source date and reason
 
 ---
 
-## FR9 — Audit Trail
+## FR12 — Audit Trail
 
-Every financial record change must be captured in audit log. Stores who, what, when, old value, new value. Immutable — never deleted. Retained 7 years for SOX compliance. Implemented as audit table for quick queries + Kafka for event replay and S3 WORM for long term archival.
+Financial record changes are captured in PostgreSQL `audit_log` by database
+triggers, including actor, action, timestamp, and old/new values. This is the
+implemented V1 queryable audit trail. Restrictive database privileges and
+seven-year WORM archival remain production hardening.
 
 ```
 GET /audit-log?record_type=invoice&record_id=1001
@@ -722,12 +731,14 @@ Time                | User  | Action | Field         | Old      | New
 
 **Storage Tiering:**
 ```
-Audit table (PostgreSQL) → quick SOX queries
-Kafka (7 year retention) → event replay
-S3 WORM                  → compliance archival (immutable)
+Audit table (PostgreSQL) → implemented; quick audit queries
+Kafka/event stream       → future; replay and archival pipeline
+S3 Object Lock/WORM      → future; seven-year immutable retention
 ```
 
 ### Future Enhancements (Phase 2)
+- Restrict application roles from updating or deleting audit rows
+- Seven-year immutable archival and retention enforcement
 - Real time audit dashboard
 - Anomaly detection (unusual changes flagged)
 - Full event sourcing
@@ -736,16 +747,14 @@ S3 WORM                  → compliance archival (immutable)
 
 ---
 
-## FR10 — Period Close
+## FR13 — Accounting Period Enforcement
 
-System must support monthly and yearly period close. Once a period is closed, no new transactions can be posted to that period. Two levels of closure: CLOSED (CFO can reopen) and LOCKED (permanent, after audit/tax filing). Enforced at both application and database level.
+The implemented scope prevents posting to non-OPEN monthly/yearly periods at
+both application and database-trigger levels. Two levels of closure are
+modelled: CLOSED (eligible for a future audited CFO reopen workflow) and LOCKED
+(permanent after audit/tax filing).
 
 ```
-POST /periods/{id}/close    ← CFO closes period
-POST /periods/{id}/lock     ← permanent lock after audit
-POST /periods/{id}/reopen   ← CFO reopens if needed
-GET  /periods               ← list all periods + status
-
 Accounting Periods — Reliance Retail:
 
 Period    | Start      | End        | Status | Closed By | Closed At
@@ -791,18 +800,46 @@ Controls: CFO approval, mandatory reason, reference to the original invoice and
 locked period, creator != approver, and an immutable audit trail. New journal
 entries are never backdated into a LOCKED period.
 
-### Future Enhancements (Phase 2)
-- Automated period close checklist
-- Period close workflow (multiple sign-offs)
-- Soft close vs hard close
-- Period close report (all pending items)
-- Automated period open (new period starts automatically)
+---
+
+## FR14 — RBAC and Segregation of Duties
+
+Role-based authorization is implemented for financial APIs. JWT roles determine
+allowed actions, and SOX segregation prevents the same user from creating and
+approving an invoice.
+
+**Roles:**
+```
+invoice_creator   → create/edit draft invoices
+invoice_approver  → approve/reject invoices
+payment_recorder  → record payments
+cfo               → write-offs and financial administration
+auditor           → read-only access to financial APIs
+```
+
+**Example:**
+```
+Rahul → role: invoice_creator
+Priya → role: invoice_approver, cfo
+
+POST /invoices/{id}/approve
+Request by: Rahul (invoice_creator)
+Response: 403 Forbidden
+
+Request by: Priya (invoice_approver)
+Response: 200 OK
+
+SOX segregation:
+created_by != approved_by → enforced in code and DB
+```
 
 ---
 
-## FR-B4 — Multi-entity and Intercompany
+## Future-FR1 — Intercompany Consolidation
 
-System must support multiple legal entities within one tenant. Invoices between entities of the same tenant are flagged as intercompany and eliminated from consolidated reports. Each entity maintains its own GL and books.
+Multi-entity scoping is implemented under FR10. Intercompany buyer-side
+posting, matching, elimination and consolidated reporting are a future
+capability. Each entity must retain its own statutory books.
 
 ```
 GET /reports/consolidated?tenant_id=T001&as_of=2024-01-31
@@ -868,7 +905,7 @@ is_intercompany:   FALSE ✅
 
 ---
 
-## FR-B5 — Manual Journal Entry
+## Future-FR2 — Manual Journal Entry
 
 System must support manual journal entries for corrections, prior period adjustments, and write-off corrections. Manual entries require CFO approval and mandatory description. Full audit trail captured. Cannot be posted to locked periods.
 
@@ -913,38 +950,29 @@ Posted:   System Feb 5 11:00
 
 ---
 
-## FR11 — User Management and RBAC
+## Future-FR3 — Period Management APIs
 
-System must support role-based access control. Each user has one or more roles. Roles determine what actions a user can perform. SOX requires strict segregation of duties — same user cannot create and approve the same invoice.
+The posting enforcement exists; administrative workflow endpoints are
+deliberately deferred:
 
-**Roles:**
-```
-invoice_creator   → create/edit draft invoices
-invoice_approver  → approve/reject invoices
-payment_recorder  → record payments
-cfo               → write-offs, period close, manual JE
-auditor           → read only access to everything
-system_admin      → user management, tenant config
+```text
+POST /periods/{id}/close    ← CFO closes period
+POST /periods/{id}/lock     ← permanent lock after audit
+POST /periods/{id}/reopen   ← CFO reopens CLOSED with an audited reason
+GET  /periods               ← list periods and status
 ```
 
-**Example:**
-```
-Rahul → role: invoice_creator
-Priya → role: invoice_approver, cfo
+- Automated period-close checklist and multiple sign-offs
+- Soft close versus hard close
+- Period-close exception report
+- Automatic creation/opening of the next period
 
-POST /invoices/{id}/approve
-Request by: Rahul (invoice_creator)
-Response: 403 Forbidden
-"invoice_creator role cannot approve invoices"
+---
 
-Request by: Priya (invoice_approver)
-Response: 200 OK ✅
+## Future-FR4 — User Management APIs
 
-SOX Segregation of Duties:
-created_by ≠ approved_by → enforced in code + DB
-```
+Role administration is not part of the implemented prototype:
 
-**APIs:**
 ```
 POST /users                    ← create user
 POST /users/{id}/roles         ← assign role

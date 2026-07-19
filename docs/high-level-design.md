@@ -55,8 +55,8 @@ API flows shown in diagram:
 - ② GET /invoices/{id} — invoice retrieval (FR1)
 - ③ POST /invoices/{id}/approve — invoice approval + GL entries (FR2)
 - ④ POST /payments — payment recording + allocation (FR4)
-- ⑤ GET /customers/{id}/aging — AR aging report (FR5)
-- ⑥ GET /journal-entries — GL journal entries (FR6)
+- ⑤ GET /customers/{id}/aging — AR aging report (FR8)
+- ⑥ GET /journal-entries — GL journal entries (FR9)
 - ⑦ GET /health — operational health check (NFR5)
 - Bonus lifecycle commands (not shown): credit memo, write-off and void
 
@@ -117,7 +117,7 @@ request/response fields and error contracts remain authoritative in
 - No audit log written (reads not audited)
 - Result: 200 + payment history + credit memo history + status history
 
-### ③ POST /invoices/{id}/approve (FR2, FR9, FR10)
+### ③ POST /invoices/{id}/approve (FR2, FR12, FR13)
 
 ![API3 invoice approval flow](flows/api3_approve_invoice_flow.svg)
 
@@ -140,7 +140,7 @@ request/response fields and error contracts remain authoritative in
 - Audit trigger fires automatically
 - Result: 200, status=APPROVED, version+1, journal_entry_id, delivery_status=QUEUED
 
-### ④ POST /payments (FR4, FR8)
+### ④ POST /payments (FR4, FR11)
 
 ![API4 payment allocation flow](flows/api4_post_payments_flow.svg)
 
@@ -161,7 +161,7 @@ request/response fields and error contracts remain authoritative in
 - Defence in depth: idempotency key + UNIQUE(tenant_id, customer_id, payment_reference)
 - Result: 201 + allocations + journal_entry_id
 
-### ⑤ GET /customers/{id}/aging (FR5)
+### ⑤ GET /customers/{id}/aging (FR8)
 
 ![API5 aging and API6 journal retrieval flows](flows/api5_api6_flows.svg)
 
@@ -176,7 +176,7 @@ request/response fields and error contracts remain authoritative in
 - No Redis, no external cache — consistent with no-Redis decision
 - Result: 200 + aging buckets + as_of timestamp
 
-### ⑥ GET /journal-entries (FR6)
+### ⑥ GET /journal-entries (FR9)
 - Required role: any authenticated user of the same entity
 - `invoice` query parameter required (SOX — must be traceable to source document)
 - Live query — journal entries immutable but must never appear missing (SOX!)
@@ -200,7 +200,7 @@ request/response fields and error contracts remain authoritative in
   event to PENDING; the application does not call SQS or the delivery adapter.
 - Repeating an active retry is harmless. Retrying a DELIVERED event returns 409.
 
-### Bonus lifecycle corrections (FR-B1–FR-B3; basic verification passed)
+### Lifecycle corrections (FR5–FR7)
 
 - `POST /invoices/{id}/credit-memos`: approver/CFO reverses Revenue and
   optional Tax, credits AR, and applies the credit memo atomically.

@@ -815,7 +815,7 @@ assert_json "$T6_PAYMENT_RESPONSE" \
   "T6 control invoice is settled so the suite remains repeatable"
 
 
-echo "=== FR-B1: Credit Memo ==="
+echo "=== FR5: Credit Memo ==="
 CM_INV_RESPONSE=$(curl -sf -X POST $BASE_URL/api/v1/invoices \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
@@ -835,13 +835,13 @@ CM_RESPONSE=$(curl -sf -X POST $BASE_URL/api/v1/invoices/$CM_INVOICE_ID/credit-m
   -d '{"reason_code":"RETURN","description":"Damaged goods returned","amount":56000,"include_tax":true}')
 assert_json "$CM_RESPONSE" \
   'data["status"] == "APPLIED" and data["reason_code"] == "RETURN" and "journal_entry_id" in data' \
-  "FR-B1 credit memo applied with GL entry"
+  "FR5 credit memo applied with GL entry"
 CM_INV_CHECK=$(curl -sf $BASE_URL/api/v1/invoices/$CM_INVOICE_ID -H "Authorization: Bearer $PRIYA_TOKEN")
 assert_json "$CM_INV_CHECK" \
   'float(data["balance_amount"]) == 0' \
-  "FR-B1 full credit memo clears its control invoice"
+  "FR5 full credit memo clears its control invoice"
 
-echo "=== FR-B3: Invoice Void ==="
+echo "=== FR7: Invoice Void ==="
 VOID_INV_RESPONSE=$(curl -sf -X POST $BASE_URL/api/v1/invoices \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
@@ -855,9 +855,9 @@ VOID_RESPONSE=$(curl -sf -X POST $BASE_URL/api/v1/invoices/$VOID_INVOICE_ID/void
   -d '{"reason_code":"DATA_ERROR","description":"Wrong amounts entered"}')
 assert_json "$VOID_RESPONSE" \
   'data["status"] == "VOID" and data["gl_reversal"] == False' \
-  "FR-B3 draft invoice voided without GL reversal"
+  "FR7 draft invoice voided without GL reversal"
 
-echo "=== FR-B2: Write-off ==="
+echo "=== FR6: Write-off ==="
 WO_INV_RESPONSE=$(curl -sf -X POST $BASE_URL/api/v1/invoices \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
@@ -877,7 +877,7 @@ WO_RESPONSE=$(curl -sf -X POST $BASE_URL/api/v1/invoices/$WO_INVOICE_ID/writeoff
   -d '{"reason_code":"BANKRUPTCY","description":"Customer declared bankruptcy"}')
 assert_json "$WO_RESPONSE" \
   'data["status"] == "WRITTEN_OFF" and "journal_entry_id" in data' \
-  "FR-B2 invoice written off with Bad Debt GL entry"
+  "FR6 invoice written off with Bad Debt GL entry"
 
 FR_B_HEALTH_RESPONSE=$(curl -sf "$BASE_URL/health")
 assert_json "$FR_B_HEALTH_RESPONSE" \
