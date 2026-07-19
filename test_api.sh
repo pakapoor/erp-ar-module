@@ -69,6 +69,34 @@ VALUES (
 )
 ON CONFLICT DO NOTHING;
 
+INSERT INTO exchange_rate (
+  id, tenant_id, from_currency, to_currency, rate, effective_date,
+  source, rate_type, status, provider_effective_date, fetched_at,
+  is_derived, is_manual_override, approved_at
+)
+VALUES (
+  '00000000-0000-0000-0000-000000000034',
+  '00000000-0000-0000-0000-000000000001',
+  'USD', 'INR', 96.00000000, '2026-07-22',
+  'TEST_FIXTURE', 'DAILY_REFERENCE', 'APPROVED', '2026-07-22',
+  CURRENT_TIMESTAMP, FALSE, FALSE, CURRENT_TIMESTAMP
+)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO exchange_rate (
+  id, tenant_id, from_currency, to_currency, rate, effective_date,
+  source, rate_type, status, provider_effective_date, fetched_at,
+  is_derived, is_manual_override, approved_at
+)
+VALUES (
+  '00000000-0000-0000-0000-000000000033',
+  '00000000-0000-0000-0000-000000000001',
+  'USD', 'INR', 97.00000000, '2026-07-21',
+  'TEST_FIXTURE', 'DAILY_REFERENCE', 'APPROVED', '2026-07-21',
+  CURRENT_TIMESTAMP, FALSE, FALSE, CURRENT_TIMESTAMP
+)
+ON CONFLICT DO NOTHING;
+
 INSERT INTO customer (
   id, tenant_id, entity_id, name, currency, payment_terms, credit_limit
 )
@@ -206,10 +234,16 @@ assert_json "$API1_RESPONSE" 'data["total_amount"] in {"174000.00", "174000.0000
 INVOICE_ID="$(JSON_RESPONSE="$API1_RESPONSE" python3 -c 'import json, os; print(json.loads(os.environ["JSON_RESPONSE"])["id"])')"
 
 echo "=== API1 FX: POST /invoices in USD ==="
+FX_RUN_ID="$(new_uuid)"
+FX_CREATE_KEY="$(new_uuid)"
+FX_APPROVE_KEY="$(new_uuid)"
+FX_PAYMENT_KEY="$(new_uuid)"
+FX_CROSS_CURRENCY_KEY="$(new_uuid)"
+FX_STALE_PAYMENT_KEY="$(new_uuid)"
 FX_API1_RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/invoices" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -H "X-Idempotency-Key: 880e8400-e29b-41d4-a716-446655440040" \
+  -H "X-Idempotency-Key: $FX_CREATE_KEY" \
   -d '{
     "customer_id": "00000000-0000-0000-0000-000000000032",
     "po_reference": "FX-API3-TEST",
@@ -255,7 +289,7 @@ echo "=== API3 FX: approve USD invoice into INR books ==="
 FX_API3_RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/invoices/$FX_INVOICE_ID/approve" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $PRIYA_TOKEN" \
-  -H "X-Idempotency-Key: 880e8400-e29b-41d4-a716-446655440041" \
+  -H "X-Idempotency-Key: $FX_APPROVE_KEY" \
   -H "If-Match: 1" \
   -d '{"notes": "Approved USD invoice using locked invoice-date rate"}')"
 pretty_print "$FX_API3_RESPONSE"
@@ -268,6 +302,143 @@ pretty_print "$FX_JOURNAL_RESPONSE"
 assert_json "$FX_JOURNAL_RESPONSE" 'len(data["journal_entries"]) == 1 and data["journal_entries"][0]["currency"] == "USD" and data["journal_entries"][0]["base_currency"] == "INR"' "API6 exposes USD document and INR book currencies"
 assert_json "$FX_JOURNAL_RESPONSE" 'data["journal_entries"][0]["transaction_balanced"] and data["journal_entries"][0]["base_balanced"] and data["journal_entries"][0]["balanced"]' "API3 journal balances in both USD and INR"
 assert_json "$FX_JOURNAL_RESPONSE" "abs(float(data['summary']['base_net_ar_balance']) - float('$FX_BASE_TOTAL')) < 0.00001" "API3 debits INR AR using the locked invoice rate"
+
+expect_status 422 "API4 rejects cross-currency allocation in V1" \
+  -X POST "$BASE_URL/api/v1/payments" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: $FX_CROSS_CURRENCY_KEY" \
+  -d "{
+    \"customer_id\": \"$FX_CUSTOMER_ID\",
+    \"payment_reference\": \"FX-WRONG-$FX_RUN_ID\",
+    \"payment_date\": \"2026-07-21\",
+    \"amount\": 1180,
+    \"currency\": \"INR\",
+    \"payment_method\": \"SWIFT\",
+    \"allocation_mode\": \"MANUAL\",
+    \"allocations\": [{\"invoice_id\": \"$FX_INVOICE_ID\", \"amount\": 1180}]
+  }"
+
+echo "=== API4 FX: settle USD invoice at payment-date rate ==="
+FX_API4_RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/payments" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: $FX_PAYMENT_KEY" \
+  -d "{
+    \"customer_id\": \"$FX_CUSTOMER_ID\",
+    \"payment_reference\": \"FX-PAYMENT-$FX_RUN_ID\",
+    \"payment_date\": \"2026-07-21\",
+    \"amount\": 1180,
+    \"currency\": \"USD\",
+    \"payment_method\": \"SWIFT\",
+    \"allocation_mode\": \"MANUAL\",
+    \"allocations\": [{\"invoice_id\": \"$FX_INVOICE_ID\", \"amount\": 1180}]
+  }")"
+pretty_print "$FX_API4_RESPONSE"
+assert_json "$FX_API4_RESPONSE" 'data["status"] == "APPLIED" and data["allocations"][0]["invoice_status"] == "PAID"' "API4 fully settles the USD invoice"
+assert_json "$FX_API4_RESPONSE" 'data["exchange_rate_used"] == "97.00000000" and data["base_amount"] == "114460.0000"' "API4 locks the payment-date USD/INR rate"
+assert_json "$FX_API4_RESPONSE" 'data["realized_fx_gain_loss"] == "843.5943" and data["allocations"][0]["base_ar_amount"] == "113616.4057"' "API4 realizes the INR FX gain against the original AR carrying value"
+
+FX_SETTLED_JOURNALS="$(curl --fail-with-body --silent --show-error \
+  "$BASE_URL/api/v1/journal-entries?invoice=$FX_INVOICE_ID" \
+  -H "Authorization: Bearer $PRIYA_TOKEN")"
+pretty_print "$FX_SETTLED_JOURNALS"
+assert_json "$FX_SETTLED_JOURNALS" 'len(data["journal_entries"]) == 2 and all(entry["balanced"] for entry in data["journal_entries"])' "API4 payment journal balances in USD and INR"
+assert_json "$FX_SETTLED_JOURNALS" 'data["summary"]["net_ar_balance"] == "0.0000" and data["summary"]["base_net_ar_balance"] == "0.0000"' "API4 clears both transaction and base AR"
+assert_json "$FX_SETTLED_JOURNALS" 'any(line["account_code"] == "4300" and line["base_credit_amount"] == "843.5943" and line["credit_amount"] == "0.0000" for entry in data["journal_entries"] for line in entry["lines"])' "API4 credits realized FX gain only in INR base currency"
+
+expect_status 503 "API4 rejects a stale payment-date FX rate" \
+  -X POST "$BASE_URL/api/v1/payments" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: $FX_STALE_PAYMENT_KEY" \
+  -d "{
+    \"customer_id\": \"$FX_CUSTOMER_ID\",
+    \"payment_reference\": \"FX-STALE-$FX_RUN_ID\",
+    \"payment_date\": \"2026-07-26\",
+    \"amount\": 1,
+    \"currency\": \"USD\",
+    \"payment_method\": \"SWIFT\",
+    \"allocation_mode\": \"MANUAL\",
+    \"allocations\": [{\"invoice_id\": \"$FX_INVOICE_ID\", \"amount\": 1}]
+  }"
+
+STALE_PAYMENT_COUNT="$(docker compose exec -T db psql -U erp_user -d erp_db -Atc \
+  "SELECT COUNT(*) FROM payment WHERE payment_reference = 'FX-STALE-$FX_RUN_ID';")"
+test "$STALE_PAYMENT_COUNT" = "0"
+echo "PASS: stale payment-rate rejection rolls back the complete transaction"
+
+echo "=== API4 FX loss: partial receipts at a lower rate ==="
+FX_LOSS_CREATE_KEY="$(new_uuid)"
+FX_LOSS_APPROVE_KEY="$(new_uuid)"
+FX_LOSS_PAYMENT1_KEY="$(new_uuid)"
+FX_LOSS_PAYMENT2_KEY="$(new_uuid)"
+
+FX_LOSS_INVOICE_RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/invoices" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Idempotency-Key: $FX_LOSS_CREATE_KEY" \
+  -d "{
+    \"customer_id\": \"$FX_CUSTOMER_ID\",
+    \"po_reference\": \"FX-LOSS-$FX_RUN_ID\",
+    \"invoice_date\": \"2026-07-21\",
+    \"payment_terms\": \"NET30\",
+    \"currency\": \"USD\",
+    \"line_items\": [{
+      \"description\": \"FX loss control\",
+      \"quantity\": 1,
+      \"unit_price\": 100,
+      \"tax_rate\": 0
+    }]
+  }")"
+FX_LOSS_INVOICE_ID="$(JSON_RESPONSE="$FX_LOSS_INVOICE_RESPONSE" python3 -c 'import json, os; print(json.loads(os.environ["JSON_RESPONSE"])["id"])')"
+assert_json "$FX_LOSS_INVOICE_RESPONSE" 'data["exchange_rate"] == "97.00000000" and data["base_total_amount"] == "9700.0000"' "API1 books the loss-control invoice at INR 97/USD"
+
+FX_LOSS_APPROVAL="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/invoices/$FX_LOSS_INVOICE_ID/approve" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: $FX_LOSS_APPROVE_KEY" \
+  -H "If-Match: 1" \
+  -d '{"notes": "FX loss and partial-payment control"}')"
+assert_json "$FX_LOSS_APPROVAL" 'data["status"] == "APPROVED"' "API3 approves the FX loss-control invoice"
+
+FX_LOSS_PAYMENT1="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/payments" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: $FX_LOSS_PAYMENT1_KEY" \
+  -d "{
+    \"customer_id\": \"$FX_CUSTOMER_ID\",
+    \"payment_reference\": \"FX-LOSS-P1-$FX_RUN_ID\",
+    \"payment_date\": \"2026-07-22\",
+    \"amount\": 40,
+    \"currency\": \"USD\",
+    \"payment_method\": \"SWIFT\",
+    \"allocation_mode\": \"MANUAL\",
+    \"allocations\": [{\"invoice_id\": \"$FX_LOSS_INVOICE_ID\", \"amount\": 40}]
+  }")"
+assert_json "$FX_LOSS_PAYMENT1" 'data["allocations"][0]["invoice_status"] == "PARTIALLY_PAID" and data["realized_fx_gain_loss"] == "-40.0000"' "API4 records a partial receipt and INR 40 realized FX loss"
+
+FX_LOSS_PAYMENT2="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/payments" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: $FX_LOSS_PAYMENT2_KEY" \
+  -d "{
+    \"customer_id\": \"$FX_CUSTOMER_ID\",
+    \"payment_reference\": \"FX-LOSS-P2-$FX_RUN_ID\",
+    \"payment_date\": \"2026-07-22\",
+    \"amount\": 60,
+    \"currency\": \"USD\",
+    \"payment_method\": \"SWIFT\",
+    \"allocation_mode\": \"MANUAL\",
+    \"allocations\": [{\"invoice_id\": \"$FX_LOSS_INVOICE_ID\", \"amount\": 60}]
+  }")"
+assert_json "$FX_LOSS_PAYMENT2" 'data["allocations"][0]["invoice_status"] == "PAID" and data["realized_fx_gain_loss"] == "-60.0000"' "API4 records the final receipt and INR 60 realized FX loss"
+
+FX_LOSS_JOURNALS="$(curl --fail-with-body --silent --show-error \
+  "$BASE_URL/api/v1/journal-entries?invoice=$FX_LOSS_INVOICE_ID" \
+  -H "Authorization: Bearer $PRIYA_TOKEN")"
+assert_json "$FX_LOSS_JOURNALS" 'len(data["journal_entries"]) == 3 and all(entry["balanced"] for entry in data["journal_entries"])' "Both partial-payment journals balance in USD and INR"
+assert_json "$FX_LOSS_JOURNALS" 'data["summary"]["base_net_ar_balance"] == "0.0000" and sum(float(line["base_debit_amount"]) for entry in data["journal_entries"] for line in entry["lines"] if line["account_code"] == "4300") == 100.0' "Partial receipts clear base AR and debit INR 100 total FX loss"
 
 echo "=== API2: GET /invoices/{id} ==="
 API2_RESPONSE="$(curl --fail-with-body --silent --show-error "$BASE_URL/api/v1/invoices/$INVOICE_ID" \

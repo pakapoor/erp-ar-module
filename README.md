@@ -114,7 +114,8 @@ erp-ar-module/
 │   ├── 004_delivery_outbox.sql
 │   ├── 005_entity_scoped_idempotency.sql
 │   ├── 006_fx_rate_ingestion.sql
-│   └── 007_base_currency_ar_aging.sql
+│   ├── 007_base_currency_ar_aging.sql
+│   └── 008_base_only_fx_journal_lines.sql
 ├── src/
 │   ├── main.py                  FastAPI composition and trace middleware
 │   ├── auth.py                  JWT/JWKS validation and RBAC

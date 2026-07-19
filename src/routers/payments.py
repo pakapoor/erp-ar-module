@@ -26,6 +26,8 @@ from src.routers.invoices import (
     check_idempotency,
     create_idempotency_key,
     complete_idempotency_key,
+    convert_to_base,
+    FX_RATE_MAX_AGE_DAYS,
     GL_AR,
 )
 
@@ -42,8 +44,7 @@ PAYABLE_STATUSES = ["APPROVED", "SENT", "PARTIALLY_PAID"]
 
 
 # ============================================================
-# HELPER: Get exchange rate for date
-# Falls back to most recent rate if exact date not found
+# HELPER: Get the latest approved, fresh exchange rate for a payment date
 # ============================================================
 async def get_exchange_rate(
     db: AsyncSession,
@@ -51,52 +52,56 @@ async def get_exchange_rate(
     from_currency: str,
     to_currency: str,
     rate_date,
-) -> tuple[Decimal, str, str | None]:
+) -> tuple[str | None, Decimal, str, str | None]:
     """
-    Returns (rate, rate_date_used, warning_message)
+    Returns (rate_id, rate, rate_date_used, warning_message).
+    Missing or stale foreign rates fail closed.
     """
     if from_currency == to_currency:
-        return Decimal("1"), str(rate_date), None
+        return None, Decimal("1"), str(rate_date), None
 
-    # Try exact date first
     result = await db.execute(
-        select(ExchangeRate).where(
+        select(ExchangeRate)
+        .where(
             and_(
                 ExchangeRate.tenant_id == tenant_id,
                 ExchangeRate.from_currency == from_currency,
                 ExchangeRate.to_currency == to_currency,
-                ExchangeRate.effective_date == rate_date,
+                ExchangeRate.rate_type == "DAILY_REFERENCE",
+                ExchangeRate.status == "APPROVED",
+                ExchangeRate.effective_date <= rate_date,
+                ExchangeRate.effective_date >= (
+                    rate_date - timedelta(days=FX_RATE_MAX_AGE_DAYS)
+                ),
             )
         )
+        .order_by(ExchangeRate.effective_date.desc(), ExchangeRate.approved_at.desc())
+        .limit(1)
     )
     rate_record = result.scalar_one_or_none()
 
-    if rate_record:
-        return rate_record.rate, str(rate_date), None
+    if not rate_record:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "FX_RATE_UNAVAILABLE: no approved "
+                f"{from_currency}/{to_currency} rate on or before {rate_date} "
+                f"within the {FX_RATE_MAX_AGE_DAYS}-day freshness limit"
+            ),
+        )
 
-    # Fall back to most recent rate
-    result = await db.execute(
-        select(ExchangeRate).where(
-            and_(
-                ExchangeRate.tenant_id == tenant_id,
-                ExchangeRate.from_currency == from_currency,
-                ExchangeRate.to_currency == to_currency,
-                ExchangeRate.effective_date < rate_date,
-            )
-        ).order_by(ExchangeRate.effective_date.desc()).limit(1)
-    )
-    rate_record = result.scalar_one_or_none()
-
-    if rate_record:
+    warning = None
+    if rate_record.effective_date != rate_date:
         warning = (
             f"Rate from {rate_record.effective_date} used "
             f"({rate_date} not available)"
         )
-        return rate_record.rate, str(rate_record.effective_date), warning
-
-    # No rate found — use 1.0 with warning
-    warning = f"No exchange rate found for {from_currency}→{to_currency}. Using 1.0"
-    return Decimal("1"), str(rate_date), warning
+    return (
+        rate_record.id,
+        rate_record.rate,
+        str(rate_record.effective_date),
+        warning,
+    )
 
 
 # ============================================================
@@ -108,6 +113,7 @@ async def auto_allocate(
     entity_id: str,
     customer_id: str,
     payment_amount: Decimal,
+    payment_currency: str,
 ) -> List[dict]:
     """
     Allocate payment to invoices oldest due date first.
@@ -120,6 +126,7 @@ async def auto_allocate(
                 Invoice.tenant_id == tenant_id,
                 Invoice.entity_id == entity_id,
                 Invoice.customer_id == customer_id,
+                Invoice.transaction_currency == payment_currency,
                 Invoice.status.in_(PAYABLE_STATUSES),
                 Invoice.balance_amount > 0,
             )
@@ -159,6 +166,7 @@ async def manual_allocate(
     entity_id: str,
     customer_id: str,
     payment_amount: Decimal,
+    payment_currency: str,
     allocation_items: list,
 ) -> List[dict]:
     """
@@ -177,6 +185,7 @@ async def manual_allocate(
                     Invoice.tenant_id == tenant_id,
                     Invoice.entity_id == entity_id,
                     Invoice.customer_id == customer_id,
+                    Invoice.transaction_currency == payment_currency,
                     Invoice.status.in_(PAYABLE_STATUSES),
                 )
             ).with_for_update()  # lock row for serializable
@@ -270,11 +279,6 @@ async def create_payment(
         )
     )
     base_currency = entity_currency_result.scalar_one()
-    if payload.currency != base_currency:
-        raise HTTPException(
-            status_code=503,
-            detail="FX_RATE_UNAVAILABLE: foreign-currency import is not active yet",
-        )
 
     # ── Payment posting period must be OPEN ────────────────
     period_result = await db.execute(
@@ -296,15 +300,13 @@ async def create_payment(
         )
 
     # ── Get exchange rate ──────────────────────────────────
-    exchange_rate, rate_date_used, fx_warning = await get_exchange_rate(
+    exchange_rate_id, exchange_rate, rate_date_used, fx_warning = await get_exchange_rate(
         db,
         current_user.tenant_id,
         payload.currency,
-        payload.currency,  # simplified: same currency for prototype
+        base_currency,
         payload.payment_date,
     )
-
-    base_amount = Decimal(str(payload.amount)) * exchange_rate
 
     # ── Begin idempotency key ──────────────────────────────
     await create_idempotency_key(
@@ -318,20 +320,33 @@ async def create_payment(
     if payload.allocation_mode == "AUTO":
         allocations, remaining = await auto_allocate(
             db, current_user.tenant_id, current_user.entity_id,
-            payload.customer_id, payment_amount
+            payload.customer_id, payment_amount, payload.currency
         )
     else:
         allocations, remaining = await manual_allocate(
             db, current_user.tenant_id, current_user.entity_id, payload.customer_id,
-            payment_amount, payload.allocations
+            payment_amount, payload.currency, payload.allocations
         )
 
     overpayment_amount = max(remaining, Decimal("0"))
 
     # ── Create payment record ──────────────────────────────
     allocated_total = sum(a["amount"] for a in allocations)
-    base_allocated_total = allocated_total * exchange_rate
-    base_unallocated_total = overpayment_amount * exchange_rate
+    base_amount = convert_to_base(payment_amount, exchange_rate)
+    base_unallocated_total = convert_to_base(overpayment_amount, exchange_rate)
+
+    # Convert allocations separately for audit, then put any rounding residual
+    # on the final allocation so the base parts exactly equal the Cash debit.
+    allocation_base_payments = [
+        convert_to_base(allocation["amount"], exchange_rate)
+        for allocation in allocations
+    ]
+    target_base_allocated = base_amount - base_unallocated_total
+    if allocation_base_payments:
+        allocation_base_payments[-1] += (
+            target_base_allocated - sum(allocation_base_payments)
+        )
+    base_allocated_total = sum(allocation_base_payments, Decimal("0"))
     payment = Payment(
         tenant_id=current_user.tenant_id,
         entity_id=current_user.entity_id,
@@ -339,6 +354,7 @@ async def create_payment(
         payment_reference=payload.payment_reference,
         payment_date=payload.payment_date,
         transaction_currency=payload.currency,
+        exchange_rate_id=exchange_rate_id,
         exchange_rate=exchange_rate,
         base_currency=base_currency,
         amount=payment_amount,
@@ -358,21 +374,29 @@ async def create_payment(
 
     # ── Apply allocations + update invoice balances ────────
     allocation_results = []
-    for alloc in allocations:
+    for allocation_index, alloc in enumerate(allocations):
         invoice = alloc["invoice"]
         amount = alloc["amount"]
 
         balance_before = invoice.balance_amount
         balance_after = balance_before - amount
 
-        # Calculate FX gain/loss
-        # Invoice rate vs payment rate → difference
-        fx_gain_loss = Decimal("0")
-        if invoice.exchange_rate != exchange_rate:
-            fx_gain_loss = amount * (exchange_rate - invoice.exchange_rate)
+        base_payment_amount = allocation_base_payments[allocation_index]
+        # A final payment must clear the exact stored AR carrying value. This
+        # avoids a one-unit rounding residue when the invoice total was built
+        # from separately rounded revenue and tax components.
+        if amount == balance_before:
+            base_ar_amount = invoice.base_balance_amount
+        else:
+            base_ar_amount = min(
+                convert_to_base(amount, invoice.exchange_rate),
+                invoice.base_balance_amount,
+            )
+        base_balance_after = invoice.base_balance_amount - base_ar_amount
 
-        base_payment_amount = amount * exchange_rate
-        base_ar_amount = amount * invoice.exchange_rate
+        # Calculate FX gain/loss
+        # Positive = realized gain; negative = realized loss.
+        fx_gain_loss = base_payment_amount - base_ar_amount
 
         # Create payment allocation record
         pa = PaymentAllocation(
@@ -389,7 +413,7 @@ async def create_payment(
 
         # Update invoice balance and status
         invoice.balance_amount = balance_after
-        invoice.base_balance_amount = balance_after * invoice.exchange_rate
+        invoice.base_balance_amount = base_balance_after
         invoice.updated_at = datetime.utcnow()
 
         if balance_after == 0:
@@ -405,9 +429,21 @@ async def create_payment(
             "invoice_balance_before": str(balance_before),
             "invoice_balance_after": str(balance_after),
             "invoice_status": invoice.status,
+            "base_payment_amount": str(base_payment_amount),
+            "base_ar_amount": str(base_ar_amount),
+            "fx_gain_loss": str(fx_gain_loss),
         })
 
     await db.flush()
+
+    base_ar_credit = sum(
+        (Decimal(result["base_ar_amount"]) for result in allocation_results),
+        Decimal("0"),
+    )
+    total_fx = sum(
+        (Decimal(result["fx_gain_loss"]) for result in allocation_results),
+        Decimal("0"),
+    )
 
     # ── Fetch GL accounts ──────────────────────────────────
     gl_result = await db.execute(
@@ -431,6 +467,8 @@ async def create_payment(
         required_accounts[GL_CUSTOMER_CREDIT] = (
             "Customer Credit liability GL account (2100)"
         )
+    if total_fx != 0:
+        required_accounts[GL_FX_GAIN_LOSS] = "FX Gain/Loss GL account (4300)"
     for account_code, account_label in required_accounts.items():
         if account_code not in gl_accounts:
             raise BusinessRuleException(
@@ -444,13 +482,6 @@ async def create_payment(
     # Credit AR          allocated amount (- FX adjustment if any)
     # Credit Customer Credit unapplied overpayment (liability)
     # Credit/Debit FX Gain/Loss (if multi-currency)
-    total_fx = sum(
-        Decimal(str(a["amount_allocated"])) *
-        (exchange_rate - alloc["invoice"].exchange_rate)
-        for a, alloc in zip(allocation_results, allocations)
-        if alloc["invoice"].exchange_rate != exchange_rate
-    )
-
     journal_entry = JournalEntry(
         tenant_id=current_user.tenant_id,
         entity_id=current_user.entity_id,
@@ -478,24 +509,23 @@ async def create_payment(
         base_credit_amount=Decimal("0"),
     ))
 
-    # CR: AR (at original invoice rates)
-    ar_credit = allocated_total - total_fx
-    if ar_credit > 0:
+    # CR: AR at each invoice's original carrying value. Transaction fields stay
+    # in document currency; base fields hold the INR legal-book values.
+    if allocated_total > 0:
         db.add(JournalEntryLine(
             tenant_id=current_user.tenant_id,
             journal_entry_id=journal_entry.id,
             gl_account_id=gl_accounts[GL_AR].id,
             description="Accounts Receivable cleared",
             debit_amount=Decimal("0"),
-            credit_amount=ar_credit,
+            credit_amount=allocated_total,
             base_debit_amount=Decimal("0"),
-            base_credit_amount=ar_credit,
+            base_credit_amount=base_ar_credit,
         ))
 
     # CR: Customer Credit — unapplied receipt remains a liability until it is
     # refunded or allocated to a future invoice.
     if overpayment_amount > 0:
-        base_overpayment_amount = overpayment_amount * exchange_rate
         db.add(JournalEntryLine(
             tenant_id=current_user.tenant_id,
             journal_entry_id=journal_entry.id,
@@ -504,7 +534,7 @@ async def create_payment(
             debit_amount=Decimal("0"),
             credit_amount=overpayment_amount,
             base_debit_amount=Decimal("0"),
-            base_credit_amount=base_overpayment_amount,
+            base_credit_amount=base_unallocated_total,
         ))
 
     # CR/DR: FX Gain/Loss (if applicable)
@@ -514,8 +544,10 @@ async def create_payment(
             journal_entry_id=journal_entry.id,
             gl_account_id=gl_accounts[GL_FX_GAIN_LOSS].id,
             description="FX Gain/Loss",
-            debit_amount=max(-total_fx, Decimal("0")),
-            credit_amount=max(total_fx, Decimal("0")),
+            # The realized difference exists only in base currency. Putting
+            # INR into these transaction columns would corrupt the USD view.
+            debit_amount=Decimal("0"),
+            credit_amount=Decimal("0"),
             base_debit_amount=max(-total_fx, Decimal("0")),
             base_credit_amount=max(total_fx, Decimal("0")),
         ))
@@ -532,6 +564,8 @@ async def create_payment(
         "payment_date": str(payload.payment_date),
         "amount": str(payment_amount),
         "currency": payload.currency,
+        "base_amount": str(base_amount),
+        "base_currency": base_currency,
         "payment_method": payload.payment_method,
         "allocation_mode": payload.allocation_mode,
         "allocations": allocation_results,
@@ -539,9 +573,11 @@ async def create_payment(
         "unallocated_amount": str(overpayment_amount),
         "overpayment_amount": str(overpayment_amount),
         "overpayment_action": "ON_ACCOUNT" if overpayment_amount > 0 else None,
+        "exchange_rate_id": exchange_rate_id,
         "exchange_rate_used": str(exchange_rate),
         "exchange_rate_date": rate_date_used,
         "exchange_rate_warning": fx_warning,
+        "realized_fx_gain_loss": str(total_fx),
         "journal_entry_id": journal_entry.id,
         "created_at": payment.created_at.isoformat(),
     }

@@ -371,6 +371,22 @@ else
   echo "Migration 007 already present"
 fi
 
+base_only_fx_lines="$(
+  docker compose exec -T db psql -U erp_user -d erp_db -Atc \
+    "SELECT EXISTS (
+       SELECT 1 FROM pg_constraint
+       WHERE conrelid = 'journal_entry_line'::regclass
+         AND conname = 'je_line_base_double_entry'
+     );"
+)"
+if [ "$base_only_fx_lines" != "t" ]; then
+  docker compose exec -T db psql -U erp_user -d erp_db \
+    -v ON_ERROR_STOP=1 \
+    -f /docker-entrypoint-initdb.d/008_base_only_fx_journal_lines.sql
+else
+  echo "Migration 008 already present"
+fi
+
 log "Refreshing the aging snapshot for deterministic health verification"
 docker compose exec -T db psql -U erp_user -d erp_db \
   -v ON_ERROR_STOP=1 \

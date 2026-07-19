@@ -200,6 +200,9 @@ class AllocationResult(BaseModel):
     invoice_balance_before: Decimal
     invoice_balance_after: Decimal
     invoice_status: str
+    base_payment_amount: Decimal
+    base_ar_amount: Decimal
+    fx_gain_loss: Decimal
 
 
 class PaymentResponse(BaseModel):
@@ -212,6 +215,8 @@ class PaymentResponse(BaseModel):
     payment_date: date
     amount: Decimal
     currency: str
+    base_amount: Decimal
+    base_currency: str
     payment_method: str
     allocation_mode: str
     allocations: List[AllocationResult]
@@ -219,9 +224,11 @@ class PaymentResponse(BaseModel):
     unallocated_amount: Decimal
     overpayment_amount: Decimal
     overpayment_action: Optional[str]
+    exchange_rate_id: Optional[str]
     exchange_rate_used: Decimal
     exchange_rate_date: date
     exchange_rate_warning: Optional[str]
+    realized_fx_gain_loss: Decimal
     journal_entry_id: str
     created_at: datetime
 
