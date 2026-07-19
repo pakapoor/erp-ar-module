@@ -42,7 +42,7 @@ labels them required prototype endpoints/functionality.
 |---|---|---|---|---|---|
 | DA1 | ER model with Customer, Invoice, Line Item, Payment, Credit Memo, GL Account and Journal Entry | Complete | Tables/models exist | `COMPLETE` | `docs/data-model.md`, ER diagrams, migration 001 |
 | DA2 | Tenant isolation with multi-entity/subsidiary structure | Complete | Same-tenant sibling-entity isolation tested | `COMPLETE` | Tenant → Entity model and entity-scoped idempotency |
-| DA3 | Base vs transaction currency and exchange-rate storage | Complete | Live ECB ingestion plus API1 immutable rate/base-amount snapshots implemented; payment FX pending | `IN PROGRESS` | Approved design: `docs/fx-rate-design.md`; never silently default missing FX rates to 1.0 |
+| DA3 | Base vs transaction currency and exchange-rate storage | Complete | Live ECB ingestion, API1 rate snapshots and API3 dual-currency journals implemented; payment FX pending | `IN PROGRESS` | Approved design: `docs/fx-rate-design.md`; never silently default missing FX rates to 1.0 |
 | DA4 | Audit trail: who changed what and when | Complete | DB triggers implemented | `COMPLETE` | Application sets transaction-local actor context |
 | DA5 | Invoice-to-GL accounting | Complete | Implemented/tested | `COMPLETE` | Approval journal balances |
 | DA6 | Payment recording and allocation | Complete | Implemented/tested | `COMPLETE` | Payment, allocation, invoice and journal commit atomically |
@@ -79,7 +79,7 @@ one instead of silently expanding scope.
 
 | ID | Capability | Current position | Status | Decision / next action |
 |---|---|---|---|---|
-| B1 | Full multi-currency and exchange-rate handling | ECB ingestion and foreign invoice creation implemented; payment-date rate and realized FX pending | `IN PROGRESS` | Complete API4 integration and remaining end-to-end tests from `docs/fx-rate-design.md` |
+| B1 | Full multi-currency and exchange-rate handling | ECB ingestion plus foreign invoice creation/approval implemented; payment-date rate and realized FX pending | `IN PROGRESS` | Complete API4 integration and remaining end-to-end tests from `docs/fx-rate-design.md` |
 | B2 | Intercompany invoicing and elimination | Schema/design only | `V2` | Review after B1; do not claim implementation |
 | B3 | Revenue recognition schedules/deferred revenue | Neither sufficient design nor implementation yet | `PARTIAL` | Must at least complete the required design discussion; then decide implementation vs V2 |
 | B4 | Odoo module or SAP integration patterns | FastAPI solution chosen | `NOT PLANNED` | Optional bonus; unrelated rewrite would weaken the submission |

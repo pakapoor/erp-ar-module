@@ -1,9 +1,9 @@
 # FX Rate Ingestion and Multi-Currency Design
 
 **Traceability:** DA3 / B1  
-**Status:** `IN PROGRESS` — ingestion and foreign-currency invoice creation are
-implemented and tested; payment-date conversion, realized FX accounting and
-their end-to-end tests remain
+**Status:** `IN PROGRESS` — ingestion, foreign-currency invoice creation and
+base-currency approval journals are implemented and tested; payment-date
+conversion, realized FX accounting and their end-to-end tests remain
 
 ## Scope
 

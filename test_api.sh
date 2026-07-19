@@ -9,6 +9,7 @@ OTHER_ENTITY_ID="00000000-0000-0000-0000-000000000096"
 RAHUL_ID="00000000-0000-0000-0000-000000000003"
 PRIYA_ID="00000000-0000-0000-0000-000000000004"
 CUSTOMER_ID="00000000-0000-0000-0000-000000000005"
+FX_CUSTOMER_ID="00000000-0000-0000-0000-000000000032"
 
 pretty_print() {
   python3 -m json.tool <<< "$1"
@@ -65,6 +66,17 @@ VALUES (
   'USD', 'INR', 96.00000000, '2026-07-16',
   'TEST_FIXTURE', 'DAILY_REFERENCE', 'APPROVED', '2026-07-16',
   CURRENT_TIMESTAMP, FALSE, FALSE, CURRENT_TIMESTAMP
+)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO customer (
+  id, tenant_id, entity_id, name, currency, payment_terms, credit_limit
+)
+VALUES (
+  '00000000-0000-0000-0000-000000000032',
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000002',
+  'FX Test Customer', 'USD', 'NET30', 10000000
 )
 ON CONFLICT DO NOTHING;
 SQL
@@ -197,10 +209,10 @@ echo "=== API1 FX: POST /invoices in USD ==="
 FX_API1_RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/invoices" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -H "X-Idempotency-Key: 880e8400-e29b-41d4-a716-446655440004" \
+  -H "X-Idempotency-Key: 880e8400-e29b-41d4-a716-446655440040" \
   -d '{
-    "customer_id": "00000000-0000-0000-0000-000000000005",
-    "po_reference": "FX-API1-TEST",
+    "customer_id": "00000000-0000-0000-0000-000000000032",
+    "po_reference": "FX-API3-TEST",
     "invoice_date": "2026-07-19",
     "payment_terms": "NET30",
     "currency": "usd",
@@ -217,6 +229,8 @@ FX_API1_RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "$BASE_U
 pretty_print "$FX_API1_RESPONSE"
 assert_json "$FX_API1_RESPONSE" 'data["currency"] == "USD" and data["base_currency"] == "INR" and data["exchange_rate_id"] is not None' "API1 locks an approved USD/INR rate"
 assert_json "$FX_API1_RESPONSE" 'abs(float(data["base_total_amount"]) - float(data["base_subtotal_amount"]) - float(data["base_tax_amount"])) < 0.00001' "API1 base components produce a balanced base total"
+FX_INVOICE_ID="$(JSON_RESPONSE="$FX_API1_RESPONSE" python3 -c 'import json, os; print(json.loads(os.environ["JSON_RESPONSE"])["id"])')"
+FX_BASE_TOTAL="$(JSON_RESPONSE="$FX_API1_RESPONSE" python3 -c 'import json, os; print(json.loads(os.environ["JSON_RESPONSE"])["base_total_amount"])')"
 
 expect_status 503 "API1 rejects a stale foreign-exchange rate" \
   -X POST "$BASE_URL/api/v1/invoices" \
@@ -236,6 +250,24 @@ STALE_INVOICE_COUNT="$(docker compose exec -T db psql -U erp_user -d erp_db -Atc
   "SELECT COUNT(*) FROM invoice WHERE po_reference = 'FX-STALE-TEST';")"
 test "$STALE_INVOICE_COUNT" = "0"
 echo "PASS: stale-rate rejection rolls back the complete invoice transaction"
+
+echo "=== API3 FX: approve USD invoice into INR books ==="
+FX_API3_RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/invoices/$FX_INVOICE_ID/approve" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: 880e8400-e29b-41d4-a716-446655440041" \
+  -H "If-Match: 1" \
+  -d '{"notes": "Approved USD invoice using locked invoice-date rate"}')"
+pretty_print "$FX_API3_RESPONSE"
+assert_json "$FX_API3_RESPONSE" 'data["status"] == "APPROVED" and data["version"] == 2' "API3 approves the USD invoice"
+
+FX_JOURNAL_RESPONSE="$(curl --fail-with-body --silent --show-error \
+  "$BASE_URL/api/v1/journal-entries?invoice=$FX_INVOICE_ID" \
+  -H "Authorization: Bearer $PRIYA_TOKEN")"
+pretty_print "$FX_JOURNAL_RESPONSE"
+assert_json "$FX_JOURNAL_RESPONSE" 'len(data["journal_entries"]) == 1 and data["journal_entries"][0]["currency"] == "USD" and data["journal_entries"][0]["base_currency"] == "INR"' "API6 exposes USD document and INR book currencies"
+assert_json "$FX_JOURNAL_RESPONSE" 'data["journal_entries"][0]["transaction_balanced"] and data["journal_entries"][0]["base_balanced"] and data["journal_entries"][0]["balanced"]' "API3 journal balances in both USD and INR"
+assert_json "$FX_JOURNAL_RESPONSE" "abs(float(data['summary']['base_net_ar_balance']) - float('$FX_BASE_TOTAL')) < 0.00001" "API3 debits INR AR using the locked invoice rate"
 
 echo "=== API2: GET /invoices/{id} ==="
 API2_RESPONSE="$(curl --fail-with-body --silent --show-error "$BASE_URL/api/v1/invoices/$INVOICE_ID" \

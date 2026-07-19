@@ -137,7 +137,9 @@ async def get_journal_entries(
             )
             SELECT
                 COALESCE(SUM(jel.debit_amount), 0) AS total_debited_ar,
-                COALESCE(SUM(jel.credit_amount), 0) AS total_credited_ar
+                COALESCE(SUM(jel.credit_amount), 0) AS total_credited_ar,
+                COALESCE(SUM(jel.base_debit_amount), 0) AS base_total_debited_ar,
+                COALESCE(SUM(jel.base_credit_amount), 0) AS base_total_credited_ar
             FROM invoice_entries entries
             JOIN journal_entry_line jel ON jel.journal_entry_id = entries.id
             JOIN gl_account ga ON ga.id = jel.gl_account_id
@@ -154,6 +156,8 @@ async def get_journal_entries(
     summary = summary_result.one()
     total_debited_ar = Decimal(str(summary.total_debited_ar))
     total_credited_ar = Decimal(str(summary.total_credited_ar))
+    base_total_debited_ar = Decimal(str(summary.base_total_debited_ar))
+    base_total_credited_ar = Decimal(str(summary.base_total_credited_ar))
 
     # ── Fetch lines for each entry ─────────────────────────
     journal_entries_response = []
@@ -162,6 +166,7 @@ async def get_journal_entries(
         lines_result = await db.execute(
             text("""
                 SELECT jel.debit_amount, jel.credit_amount,
+                       jel.base_debit_amount, jel.base_credit_amount,
                        ga.account_code, ga.account_name
                 FROM journal_entry_line jel
                 JOIN gl_account ga ON ga.id = jel.gl_account_id
@@ -174,12 +179,17 @@ async def get_journal_entries(
 
         total_debits = sum(Decimal(str(l.debit_amount)) for l in lines)
         total_credits = sum(Decimal(str(l.credit_amount)) for l in lines)
-        balanced = abs(total_debits - total_credits) < Decimal("0.01")
+        base_total_debits = sum(Decimal(str(l.base_debit_amount)) for l in lines)
+        base_total_credits = sum(Decimal(str(l.base_credit_amount)) for l in lines)
+        transaction_balanced = abs(total_debits - total_credits) < Decimal("0.01")
+        base_balanced = abs(base_total_debits - base_total_credits) < Decimal("0.01")
+        balanced = transaction_balanced and base_balanced
 
         if not balanced:
             logger.error(
                 f"UNBALANCED JOURNAL ENTRY DETECTED: {entry.id} "
-                f"debits={total_debits} credits={total_credits}"
+                f"transaction={total_debits}/{total_credits} "
+                f"base={base_total_debits}/{base_total_credits}"
             )
 
         journal_entries_response.append({
@@ -190,17 +200,25 @@ async def get_journal_entries(
             "entry_date": str(entry.entry_date),
             "description": entry.description,
             "created_by": str(entry.created_by),
+            "currency": entry.currency,
+            "base_currency": invoice.base_currency,
             "lines": [
                 {
                     "account_code": line.account_code,
                     "account_name": line.account_name,
                     "debit_amount": str(line.debit_amount),
                     "credit_amount": str(line.credit_amount),
+                    "base_debit_amount": str(line.base_debit_amount),
+                    "base_credit_amount": str(line.base_credit_amount),
                 }
                 for line in lines
             ],
             "total_debits": str(total_debits),
             "total_credits": str(total_credits),
+            "base_total_debits": str(base_total_debits),
+            "base_total_credits": str(base_total_credits),
+            "transaction_balanced": transaction_balanced,
+            "base_balanced": base_balanced,
             "balanced": balanced,
         })
 
@@ -218,6 +236,11 @@ async def get_journal_entries(
             "total_debited_ar": str(total_debited_ar),
             "total_credited_ar": str(total_credited_ar),
             "net_ar_balance": str(total_debited_ar - total_credited_ar),
+            "base_total_debited_ar": str(base_total_debited_ar),
+            "base_total_credited_ar": str(base_total_credited_ar),
+            "base_net_ar_balance": str(
+                base_total_debited_ar - base_total_credited_ar
+            ),
         },
     }
 

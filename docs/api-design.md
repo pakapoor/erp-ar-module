@@ -867,28 +867,40 @@ page_size    ← default 20, max 100
       "entry_date": "2024-01-15",
       "description": "Invoice #1001 approved",
       "created_by": "priya-uuid",
+      "currency": "INR",
+      "base_currency": "INR",
       "lines": [
         {
           "account_code": "1200",
           "account_name": "Accounts Receivable",
           "debit_amount": 174000,
-          "credit_amount": 0
+          "credit_amount": 0,
+          "base_debit_amount": 174000,
+          "base_credit_amount": 0
         },
         {
           "account_code": "3100",
           "account_name": "Sales Revenue",
           "debit_amount": 0,
-          "credit_amount": 150000
+          "credit_amount": 150000,
+          "base_debit_amount": 0,
+          "base_credit_amount": 150000
         },
         {
           "account_code": "2200",
           "account_name": "Tax Payable",
           "debit_amount": 0,
-          "credit_amount": 24000
+          "credit_amount": 24000,
+          "base_debit_amount": 0,
+          "base_credit_amount": 24000
         }
       ],
       "total_debits": 174000,
       "total_credits": 174000,
+      "base_total_debits": 174000,
+      "base_total_credits": 174000,
+      "transaction_balanced": true,
+      "base_balanced": true,
       "balanced": true
     },
     {
@@ -899,22 +911,32 @@ page_size    ← default 20, max 100
       "entry_date": "2024-01-20",
       "description": "Payment P001 received from Tata Steel",
       "created_by": "system",
+      "currency": "INR",
+      "base_currency": "INR",
       "lines": [
         {
           "account_code": "1100",
           "account_name": "Cash",
           "debit_amount": 100000,
-          "credit_amount": 0
+          "credit_amount": 0,
+          "base_debit_amount": 100000,
+          "base_credit_amount": 0
         },
         {
           "account_code": "1200",
           "account_name": "Accounts Receivable",
           "debit_amount": 0,
-          "credit_amount": 100000
+          "credit_amount": 100000,
+          "base_debit_amount": 0,
+          "base_credit_amount": 100000
         }
       ],
       "total_debits": 100000,
       "total_credits": 100000,
+      "base_total_debits": 100000,
+      "base_total_credits": 100000,
+      "transaction_balanced": true,
+      "base_balanced": true,
       "balanced": true
     },
     {
@@ -925,34 +947,49 @@ page_size    ← default 20, max 100
       "entry_date": "2024-01-25",
       "description": "Credit memo CM001 — goods returned",
       "created_by": "priya-uuid",
+      "currency": "INR",
+      "base_currency": "INR",
       "lines": [
         {
           "account_code": "3100",
           "account_name": "Sales Revenue",
           "debit_amount": 10000,
-          "credit_amount": 0
+          "credit_amount": 0,
+          "base_debit_amount": 10000,
+          "base_credit_amount": 0
         },
         {
           "account_code": "1200",
           "account_name": "Accounts Receivable",
           "debit_amount": 0,
-          "credit_amount": 10000
+          "credit_amount": 10000,
+          "base_debit_amount": 0,
+          "base_credit_amount": 10000
         }
       ],
       "total_debits": 10000,
       "total_credits": 10000,
+      "base_total_debits": 10000,
+      "base_total_credits": 10000,
+      "transaction_balanced": true,
+      "base_balanced": true,
       "balanced": true
     }
   ],
   "summary": {
     "total_debited_ar": 174000,
     "total_credited_ar": 110000,
-    "net_ar_balance": 64000
+    "net_ar_balance": 64000,
+    "base_total_debited_ar": 174000,
+    "base_total_credited_ar": 110000,
+    "base_net_ar_balance": 64000
   }
 }
 ```
 
-**`balanced: true`** on every entry — debits always equal credits.
+For foreign documents, transaction fields retain the document currency while
+`base_*` fields show the INR amounts posted to the legal books.
+**`balanced: true`** means both representations independently balance.
 If ever `false` → system RED alert, immediate investigation!
 
 Pagination applies only to `journal_entries`; `summary` always represents all

@@ -66,13 +66,14 @@ entries; it creates a fresh, settled invoice for each real concurrency race.
 | API1 `POST /invoices` | HTTP 201; DRAFT version 1; server-calculated subtotal INR 150,000, tax INR 24,000, total INR 174,000 |
 | API1 foreign-currency invoice | Lowercase `usd` is normalized; an approved USD/INR rate ID and all INR base snapshots are stored; base components balance |
 | API1 stale FX rate | HTTP 503; no invoice is created and the transaction rolls back |
+| API3 foreign-currency approval | USD invoice becomes APPROVED version 2; one journal balances independently in USD transaction amounts and INR base amounts |
 | API2 `GET /invoices/{id}` | HTTP 200; same invoice and two line items; ETag reflects the current version |
 | API3 `POST /invoices/{id}/approve` | HTTP 200; APPROVED version 2; approval journal ID returned; delivery status QUEUED on a fresh run |
 | Delivery outbox | Approval event reaches DELIVERED within 10 seconds; stub receives the stable delivery-event ID |
 | API4 `POST /payments` | HTTP 201; INR 100,000 allocated; invoice becomes PARTIALLY_PAID with INR 74,000 balance |
 | API4 same-key retry | Original payment ID and response are returned; no second payment is created |
 | API5 customer aging | HTTP 200; current bucket contains one posted invoice totaling INR 74,000; foreign DRAFT invoices are excluded |
-| API6 invoice journals | HTTP 200; two entries; every entry balances; net GL AR is INR 74,000 |
+| API6 invoice journals | HTTP 200; transaction/base amounts and currencies are explicit; every entry balances in both representations; base net GL AR is INR 74,000 |
 | API6 pagination pages 1 and 2 | One distinct journal per page; `total=2`, `total_pages=2`; both retain invoice-wide net AR INR 74,000 |
 | API6 pagination page 3 | HTTP 200 with an empty journal list and unchanged invoice-wide summary |
 | API6 invalid pagination | HTTP 422 for page 0 and page size 101 |

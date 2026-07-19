@@ -258,6 +258,8 @@ class JournalEntryLineResponse(BaseModel):
     account_name: str
     debit_amount: Decimal
     credit_amount: Decimal
+    base_debit_amount: Decimal
+    base_credit_amount: Decimal
 
 
 class JournalEntryResponse(BaseModel):
@@ -268,10 +270,16 @@ class JournalEntryResponse(BaseModel):
     entry_date: date
     description: str
     created_by: str
+    currency: str
+    base_currency: str
     lines: List[JournalEntryLineResponse]
     total_debits: Decimal
     total_credits: Decimal
-    balanced: bool  # always True — alert if False!
+    base_total_debits: Decimal
+    base_total_credits: Decimal
+    transaction_balanced: bool
+    base_balanced: bool
+    balanced: bool  # both transaction and base representations balance
 
 
 class JournalEntriesResponse(BaseModel):
