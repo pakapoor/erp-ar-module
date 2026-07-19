@@ -109,17 +109,15 @@ The following paths were executed locally against the Docker Compose stack:
 ./deploy.sh
 ```
 
-The commands above are the regression target. The SQS extension additionally
-runs `test_delivery_sqs.sh`, covering outbox publication, duplicate delivery,
-DLQ redrive, financial independence and CFO retry. Do not claim a successful
-local run until all four scripts exit zero. Earlier pre-SQS runs completed API, accounting,
-entity isolation, overpayment, optimistic-concurrency, health, idempotency,
-gateway JWT, network-isolation, and trace-propagation assertions. The full
-build correctly reported migrations 002, 004, 005, and 006 as
-already present, reused both pg_cron jobs, refreshed the MV concurrently,
-and returned all pre-SQS services in a running/healthy state. Repeated executions
-did not duplicate walkthrough financial records or the cron schedule; each
-concurrency race uses a fresh invoice and settles it before exit.
+`./deploy.sh --no-build --no-install --test` completed locally with exit status
+0 after the SQS extension. All four suites passed: required APIs/controls,
+AUTO+MANUAL payment races, the B6 credit-memo matrix, and SQS delivery. The last
+suite proves outbox publication, duplicate handling, three-receive DLQ redrive,
+financial independence during adapter failure, and CFO retry. Migration 009 was
+detected on rerun, both queues had the configured visibility/long-poll/redrive
+attributes, and all eight services finished running (PostgreSQL and LocalStack
+healthy). Repeated executions use isolated control customers so AUTO FIFO and
+aging assertions do not depend on test order.
 
 ## Expected health result
 

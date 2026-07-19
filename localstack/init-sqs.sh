@@ -19,12 +19,11 @@ dlq_arn="$(awslocal sqs get-queue-attributes \
   --attribute-names QueueArn \
   --query Attributes.QueueArn \
   --output text)"
-redrive_policy="{\"deadLetterTargetArn\":\"$dlq_arn\",\"maxReceiveCount\":\"3\"}"
+queue_attributes="{\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"$dlq_arn\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\",\"VisibilityTimeout\":\"3\",\"ReceiveMessageWaitTimeSeconds\":\"2\"}"
 
 awslocal sqs create-queue \
   --queue-name "$DELIVERY_QUEUE_NAME" \
-  --attributes \
-    "RedrivePolicy=$redrive_policy,VisibilityTimeout=3,ReceiveMessageWaitTimeSeconds=2" \
+  --attributes "$queue_attributes" \
   >/dev/null
 
 echo "Created SQS queues: $DELIVERY_QUEUE_NAME -> $DELIVERY_DLQ_NAME"

@@ -8,7 +8,7 @@ ENTITY_ID="00000000-0000-0000-0000-000000000002"
 OTHER_ENTITY_ID="00000000-0000-0000-0000-000000000096"
 RAHUL_ID="00000000-0000-0000-0000-000000000003"
 PRIYA_ID="00000000-0000-0000-0000-000000000004"
-DELIVERY_CUSTOMER_ID="00000000-0000-0000-0000-000000000036"
+DELIVERY_CUSTOMER_ID="00000000-0000-0000-0000-000000000037"
 
 cleanup() {
   docker compose start stub delivery_worker >/dev/null 2>&1 || true
@@ -90,7 +90,7 @@ INSERT INTO customer (
   id, tenant_id, entity_id, name, email, currency, payment_terms, credit_limit
 )
 VALUES (
-  '00000000-0000-0000-0000-000000000036',
+  '00000000-0000-0000-0000-000000000037',
   '00000000-0000-0000-0000-000000000001',
   '00000000-0000-0000-0000-000000000002',
   'SQS Delivery Control Customer', 'delivery@example.com',
@@ -155,6 +155,10 @@ expect_status 404 "delivery status conceals a sibling-entity invoice" \
   "$BASE_URL/api/v1/invoices/$HAPPY_INVOICE_ID/delivery" \
   -H "Authorization: Bearer $OTHER_ENTITY_TOKEN"
 
+expect_status 403 "non-CFO cannot retry a delivery event" \
+  -X POST "$BASE_URL/api/v1/delivery-events/$HAPPY_EVENT_ID/retry" \
+  -H "Authorization: Bearer $RAHUL_TOKEN"
+
 expect_status 409 "completed delivery cannot be retried" \
   -X POST "$BASE_URL/api/v1/delivery-events/$HAPPY_EVENT_ID/retry" \
   -H "Authorization: Bearer $PRIYA_TOKEN"
@@ -191,7 +195,10 @@ DEAD_EVENT_ID="$(db_scalar "
 wait_for_db_status "$DEAD_EVENT_ID" "PUBLISHED"
 
 docker compose stop stub >/dev/null
-docker compose start delivery_worker >/dev/null
+# Start only the existing consumer container. `docker compose start` also
+# starts declared dependencies, which would bring the failed adapter back up
+# and invalidate this outage drill.
+docker start erp_delivery_worker >/dev/null
 wait_for_db_status "$DEAD_EVENT_ID" "DEAD"
 
 DLQ_MESSAGES=0
