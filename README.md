@@ -80,14 +80,16 @@ verification, and an optional delivery-retry drill are in
 
 ## Time Tracking
 
-This project was expanded beyond the assessment's 3–4 hour prototype timebox
-as an interactive learning and interview-walkthrough exercise. Before final
-submission, replace the placeholders below with your actual approximate time:
+The assessment suggested 3-4 hours. I chose to spend a full weekend going deep - financial systems are a new domain for me and I wanted to genuinely understand the accounting, not just implement APIs.
 
-- Data model and architecture: `[candidate to provide]`
-- Working prototype: `[candidate to provide]`
-- Financial controls and compliance analysis: `[candidate to provide]`
-- Experience showcase: `[candidate to provide]`
+The time was primarily invested in:
+
+- **Domain learning and design:** accounting concepts, double-entry bookkeeping, GL integration, period close, SOX - significant upfront investment that produced the depth visible in the design docs
+- **Data model, ER diagrams, FRs, NFRs, API design, tradeoffs:** thorough and deliberate design phase before a line of code was written
+- **Working prototype with full test suite:** built iteratively, fixing real issues (isolation level ordering, idempotency, JWT kid header, concurrent approval race)
+- **Financial controls, experience showcase, documentation:** written honestly from real experience at Meta and Lenovo
+
+**Total: approximately one weekend.** AI tools (Claude for domain learning and design exploration, GitHub Copilot and Codex for code assistance) made this depth achievable in the time available - which is exactly the point of encouraging AI tool use in the assessment.
 
 ## Project Structure
 
