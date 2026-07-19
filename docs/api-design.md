@@ -135,6 +135,8 @@ GET /jobs/{job_id}
 
 ## API1 — POST /invoices
 
+[View API1 happy-path flow](flows/api1_post_invoices_flow.svg)
+
 Creates a new invoice in DRAFT status.
 
 **Required role:** `invoice_creator`
@@ -273,6 +275,8 @@ directly converting the transaction total would differ by a rounding unit.
 
 ## API2 — GET /invoices/{id}
 
+[View API2 happy-path flow](flows/api2_get_invoice_flow.svg)
+
 Retrieves invoice with current balance, payment history,
 credit memo history, and status history (SOX requirement).
 
@@ -396,6 +400,8 @@ ETag: "5"   ← version number, used as If-Match on subsequent writes
 
 ## API3 — POST /invoices/{id}/approve
 
+[View API3 happy-path flow](flows/api3_approve_invoice_flow.svg)
+
 Approves invoice. Generates GL journal entry atomically.
 Synchronous — single DB transaction, target < 300ms p99.
 
@@ -498,10 +504,12 @@ POST /api/v1/invoices/bulk-approve
 
 ## API4 — POST /payments
 
+[View API4 happy-path flow](flows/api4_post_payments_flow.svg)
+
 Records a payment and allocates to one or more invoices.
 Supports AUTO (FIFO) and MANUAL allocation modes.
 
-**Required role:** `payment_recorder`
+**Required role:** `payment_recorder` or `cfo`
 
 ### Request — AUTO Mode (FIFO)
 
@@ -747,6 +755,8 @@ POST /api/v1/payments/webhook
 
 ## API5 — GET /customers/{id}/aging
 
+[View combined API5/API6 reporting flow](flows/api5_api6_flows.svg)
+
 Returns AR aging summary for a customer.
 Reads from materialized view — refreshed every 5 minutes.
 Shows explicit as_of timestamp so user knows data freshness.
@@ -835,8 +845,10 @@ persisted daily snapshots. It cannot use the invoice's current
 
 ## API6 — GET /journal-entries
 
+[View combined API5/API6 reporting flow](flows/api5_api6_flows.svg)
+
 Retrieves GL journal entries for an invoice.
-invoice_id is required. Other filters optional.
+The `invoice` query parameter is required. Other filters are optional.
 Supports pagination for invoices with many entries.
 
 **Required role:** Any authenticated user of the same entity. Cross-entity

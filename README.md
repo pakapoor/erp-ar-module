@@ -22,6 +22,7 @@ For interview/review, follow this order:
 - [Assessment Requirements Traceability](docs/requirements-traceability.md)
 - [FX Rate and Multi-Currency Design](docs/fx-rate-design.md)
 - [High Level Design](docs/high-level-design.md)
+- [Per-API Flow Diagrams](docs/high-level-design.md#api-flow-details)
 - [Data Model](docs/data-model.md)
 - [API Design](docs/api-design.md)
 - [Design Tradeoffs](docs/tradeoffs.md)
@@ -158,6 +159,7 @@ erp-ar-module/
 └── docs/
     ├── requirements-traceability.md  Living assessment coverage matrix
     ├── high-level-design.md           Component/API architecture
+    ├── flows/                         Happy-path diagrams for APIs 1–6
     ├── fx-rate-design.md              Approved multi-currency design
     ├── data-model.md                  ER model and schema decisions
     ├── api-design.md                  Endpoint contracts and errors

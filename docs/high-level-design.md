@@ -82,7 +82,14 @@ derivation, posting examples, failure rules and test acceptance criteria.
 
 ## API Flow Details
 
+These diagrams show the happy path and the main consistency boundary. Exact
+request/response fields and error contracts remain authoritative in
+[API Design](api-design.md).
+
 ### ① POST /invoices (FR1)
+
+![API1 invoice creation flow](flows/api1_post_invoices_flow.svg)
+
 - Required role: invoice_creator
 - X-Idempotency-Key required
 - Server calculates: subtotal, tax, total, due_date (never trust client)
@@ -94,6 +101,9 @@ derivation, posting examples, failure rules and test acceptance criteria.
 - Result: 201 Created, status=DRAFT, version=1
 
 ### ② GET /invoices/{id} (FR1)
+
+![API2 invoice retrieval flow](flows/api2_get_invoice_flow.svg)
+
 - Required role: any authenticated user of same entity
 - No idempotency key (read only)
 - Live JOIN across: invoice, line_item, payment, payment_allocation, credit_memo, audit_log
@@ -103,6 +113,9 @@ derivation, posting examples, failure rules and test acceptance criteria.
 - Result: 200 + payment history + credit memo history + status history
 
 ### ③ POST /invoices/{id}/approve (FR2, FR9, FR10)
+
+![API3 invoice approval flow](flows/api3_approve_invoice_flow.svg)
+
 - Required role: invoice_approver or cfo
 - X-Idempotency-Key required
 - If-Match: version required (ABA prevention via optimistic locking)
@@ -119,7 +132,10 @@ derivation, posting examples, failure rules and test acceptance criteria.
 - Result: 200, status=APPROVED, version+1, journal_entry_id, delivery_status=QUEUED
 
 ### ④ POST /payments (FR4, FR8)
-- Required role: payment_recorder
+
+![API4 payment allocation flow](flows/api4_post_payments_flow.svg)
+
+- Required role: payment_recorder or cfo
 - X-Idempotency-Key required
 - Serializable isolation level (strictest) — prevents double allocation
 - Allocation modes: AUTO (FIFO oldest first) or MANUAL (client specifies)
@@ -137,6 +153,9 @@ derivation, posting examples, failure rules and test acceptance criteria.
 - Result: 201 + allocations + journal_entry_id
 
 ### ⑤ GET /customers/{id}/aging (FR5)
+
+![API5 aging and API6 journal retrieval flows](flows/api5_api6_flows.svg)
+
 - Required role: any authenticated user
 - Reads from ar_aging materialized view (pre-computed)
 - Sums `base_balance_amount` in entity currency; DRAFT invoices are excluded
@@ -150,7 +169,7 @@ derivation, posting examples, failure rules and test acceptance criteria.
 
 ### ⑥ GET /journal-entries (FR6)
 - Required role: any authenticated user of the same entity
-- invoice_id required filter (SOX — must be traceable to source document)
+- `invoice` query parameter required (SOX — must be traceable to source document)
 - Live query — journal entries immutable but must never appear missing (SOX!)
 - Returns both transaction-currency and base-currency amounts and verifies each balances
 - Page-based pagination (max 20 rows per invoice — cursor not needed)
