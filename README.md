@@ -113,7 +113,8 @@ erp-ar-module/
 │   ├── 003_setup_pg_cron.sh
 │   ├── 004_delivery_outbox.sql
 │   ├── 005_entity_scoped_idempotency.sql
-│   └── 006_fx_rate_ingestion.sql
+│   ├── 006_fx_rate_ingestion.sql
+│   └── 007_base_currency_ar_aging.sql
 ├── src/
 │   ├── main.py                  FastAPI composition and trace middleware
 │   ├── auth.py                  JWT/JWKS validation and RBAC
@@ -123,7 +124,8 @@ erp-ar-module/
 │   ├── delivery_worker.py       Transactional-outbox delivery consumer
 │   ├── fx_rate_worker.py        Scheduled ECB import and INR-rate derivation
 │   ├── tests/
-│   │   └── test_fx_rate_worker.py  Deterministic ECB parser/derivation tests
+│   │   ├── test_fx_rate_worker.py  Deterministic ECB parser/derivation tests
+│   │   └── test_invoice_fx.py      Invoice conversion/validation tests
 │   ├── models/
 │   │   ├── __init__.py
 │   │   └── models.py            ORM financial and operational models

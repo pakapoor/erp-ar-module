@@ -47,8 +47,27 @@ echo "=== Setup: seed data and runtime JWTs ==="
 docker compose exec -T app python -m src.seed_data >/dev/null
 
 echo "=== FX feed contract: deterministic ECB parser/derivation ==="
-docker compose exec -T app python -m unittest -q src.tests.test_fx_rate_worker
-echo "PASS: ECB CSV validation and INR cross-rate derivation"
+docker compose exec -T app python -m unittest -q \
+  src.tests.test_fx_rate_worker src.tests.test_invoice_fx
+echo "PASS: ECB validation, INR cross-rate derivation and invoice FX rounding"
+
+# Deterministic fallback for the API1 integration test. A live ECB row dated
+# 2026-07-17 wins when present; otherwise this three-day-old fixture is valid.
+docker compose exec -T db psql -U erp_user -d erp_db -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+INSERT INTO exchange_rate (
+  id, tenant_id, from_currency, to_currency, rate, effective_date,
+  source, rate_type, status, provider_effective_date, fetched_at,
+  is_derived, is_manual_override, approved_at
+)
+VALUES (
+  '00000000-0000-0000-0000-000000000031',
+  '00000000-0000-0000-0000-000000000001',
+  'USD', 'INR', 96.00000000, '2026-07-16',
+  'TEST_FIXTURE', 'DAILY_REFERENCE', 'APPROVED', '2026-07-16',
+  CURRENT_TIMESTAMP, FALSE, FALSE, CURRENT_TIMESTAMP
+)
+ON CONFLICT DO NOTHING;
+SQL
 
 TOKEN="$(docker compose exec -T app python -c "
 from src.auth import create_test_token
@@ -173,6 +192,50 @@ API1_RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/
 pretty_print "$API1_RESPONSE"
 assert_json "$API1_RESPONSE" 'data["total_amount"] in {"174000.00", "174000.0000"}' "API1 server-calculated total is INR 174,000"
 INVOICE_ID="$(JSON_RESPONSE="$API1_RESPONSE" python3 -c 'import json, os; print(json.loads(os.environ["JSON_RESPONSE"])["id"])')"
+
+echo "=== API1 FX: POST /invoices in USD ==="
+FX_API1_RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/invoices" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Idempotency-Key: 880e8400-e29b-41d4-a716-446655440004" \
+  -d '{
+    "customer_id": "00000000-0000-0000-0000-000000000005",
+    "po_reference": "FX-API1-TEST",
+    "invoice_date": "2026-07-19",
+    "payment_terms": "NET30",
+    "currency": "usd",
+    "line_items": [
+      {
+        "description": "USD equipment",
+        "quantity": 1,
+        "unit_price": 1000,
+        "tax_rate": 18,
+        "tax_jurisdiction": "MH"
+      }
+    ]
+  }')"
+pretty_print "$FX_API1_RESPONSE"
+assert_json "$FX_API1_RESPONSE" 'data["currency"] == "USD" and data["base_currency"] == "INR" and data["exchange_rate_id"] is not None' "API1 locks an approved USD/INR rate"
+assert_json "$FX_API1_RESPONSE" 'abs(float(data["base_total_amount"]) - float(data["base_subtotal_amount"]) - float(data["base_tax_amount"])) < 0.00001' "API1 base components produce a balanced base total"
+
+expect_status 503 "API1 rejects a stale foreign-exchange rate" \
+  -X POST "$BASE_URL/api/v1/invoices" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Idempotency-Key: 880e8400-e29b-41d4-a716-446655440005" \
+  -d '{
+    "customer_id": "00000000-0000-0000-0000-000000000005",
+    "po_reference": "FX-STALE-TEST",
+    "invoice_date": "2026-07-01",
+    "payment_terms": "NET30",
+    "currency": "USD",
+    "line_items": [{"description": "Stale FX test", "quantity": 1, "unit_price": 1}]
+  }'
+
+STALE_INVOICE_COUNT="$(docker compose exec -T db psql -U erp_user -d erp_db -Atc \
+  "SELECT COUNT(*) FROM invoice WHERE po_reference = 'FX-STALE-TEST';")"
+test "$STALE_INVOICE_COUNT" = "0"
+echo "PASS: stale-rate rejection rolls back the complete invoice transaction"
 
 echo "=== API2: GET /invoices/{id} ==="
 API2_RESPONSE="$(curl --fail-with-body --silent --show-error "$BASE_URL/api/v1/invoices/$INVOICE_ID" \

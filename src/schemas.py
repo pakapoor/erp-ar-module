@@ -1,7 +1,19 @@
 from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, List
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+SUPPORTED_CURRENCIES = {"INR", "USD", "EUR", "CNY", "GBP", "JPY", "CHF", "CAD"}
+
+
+def normalize_supported_currency(value: str) -> str:
+    currency = value.upper()
+    if currency not in SUPPORTED_CURRENCIES:
+        raise ValueError(
+            f"unsupported currency; expected one of {', '.join(sorted(SUPPORTED_CURRENCIES))}"
+        )
+    return currency
 
 
 # ============================================================
@@ -46,6 +58,11 @@ class InvoiceCreate(BaseModel):
     currency: str = Field(..., min_length=3, max_length=3)
     line_items: List[LineItemCreate] = Field(..., min_length=1)
 
+    @field_validator("currency")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        return normalize_supported_currency(value)
+
     # NOT in request body — server derives these:
     # tenant_id    ← from JWT
     # entity_id    ← from JWT
@@ -87,12 +104,18 @@ class InvoiceResponse(BaseModel):
     due_date: date
     payment_terms: str
     currency: str
+    base_currency: str
+    exchange_rate_id: Optional[str]
     exchange_rate: Decimal
     line_items: List[LineItemResponse]
     subtotal_amount: Decimal
     tax_amount: Decimal
     total_amount: Decimal
     balance_amount: Decimal
+    base_subtotal_amount: Decimal
+    base_tax_amount: Decimal
+    base_total_amount: Decimal
+    base_balance_amount: Decimal
     # Only in GET response (not in create response)
     payment_history: Optional[List[PaymentHistoryItem]] = None
     credit_memo_history: Optional[List[CreditMemoHistoryItem]] = None
@@ -152,6 +175,11 @@ class PaymentCreate(BaseModel):
     payment_method: str = Field(..., pattern="^(NEFT|RTGS|SWIFT|CHEQUE|CARD|UPI|ACH)$")
     allocation_mode: str = Field(default="AUTO", pattern="^(AUTO|MANUAL)$")
     allocations: Optional[List[AllocationItem]] = None
+
+    @field_validator("currency")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        return normalize_supported_currency(value)
 
     @model_validator(mode="after")
     def validate_manual_allocations(self):

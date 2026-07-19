@@ -210,8 +210,7 @@ than three calendar days old. A missing/stale rate returns
   "currency": "INR",
   "base_currency": "INR",
   "exchange_rate_id": null,
-  "exchange_rate_used": 1.0,
-  "exchange_rate_date": "2024-01-15",
+  "exchange_rate": 1.0,
   "line_items": [
     {
       "id": "uuid-line-1",
@@ -242,6 +241,10 @@ than three calendar days old. A missing/stale rate returns
   "tax_amount": 24000,
   "total_amount": 174000,
   "balance_amount": 174000,
+  "base_subtotal_amount": 150000,
+  "base_tax_amount": 24000,
+  "base_total_amount": 174000,
+  "base_balance_amount": 174000,
   "created_by": "rahul-uuid",
   "created_at": "2024-01-15T09:00:00Z"
 }
@@ -261,6 +264,10 @@ than three calendar days old. A missing/stale rate returns
 422 → unsupported currency
 503 → FX_RATE_UNAVAILABLE (no approved rate within three calendar days)
 ```
+
+Base subtotal and tax are rounded independently to four decimal places; base
+total is their sum. This keeps the approval journal exactly balanced even when
+directly converting the transaction total would differ by a rounding unit.
 
 ---
 
@@ -744,6 +751,8 @@ entity_id  ← optional, defaults to JWT entity
 
 The prototype returns current aging only. The response `as_of` value is the
 materialized-view refresh timestamp, not a caller-selected historical date.
+All buckets are in the entity's base currency and include only posted open-AR
+states (`APPROVED`, `SENT`, `PARTIALLY_PAID`). DRAFT invoices are not yet AR.
 
 No idempotency key or ETag needed:
 ```
@@ -803,7 +812,7 @@ No idempotency key or ETag needed:
 A historical `as_of` query must reconstruct the balance from dated payments,
 allocations, credit memos, write-offs, voids, and reversals, or read from
 persisted daily snapshots. It cannot use the invoice's current
-`balance_amount`. This is outside the required prototype scope.
+`base_balance_amount`. This is outside the required prototype scope.
 
 ---
 
@@ -1009,15 +1018,15 @@ No auth required — used by infrastructure.
 
 ```
 POST /invoices/{id}/send          ← FR3: send invoice to customer
-POST /invoices/{id}/void          ← FR7: void invoice
-POST /invoices/{id}/credit-memos  ← FR5: create credit memo
-POST /invoices/{id}/writeoff      ← FR6: write off invoice
-POST /journal-entries/manual      ← FR15: manual journal entry
-POST /periods/{id}/close          ← FR13: close accounting period
-POST /periods/{id}/reopen         ← FR13: CFO reopens CLOSED period with reason
-POST /periods/{id}/lock           ← FR13: lock accounting period
-POST /users                       ← FR16: create user
-POST /users/{id}/roles            ← FR16: assign role
+POST /invoices/{id}/void          ← FR-B3: void invoice
+POST /invoices/{id}/credit-memos  ← FR-B1: create credit memo
+POST /invoices/{id}/writeoff      ← FR-B2: write off invoice
+POST /journal-entries/manual      ← FR-B5: manual journal entry
+POST /periods/{id}/close          ← FR-B3: close accounting period
+POST /periods/{id}/reopen         ← FR-B3: CFO reopens CLOSED period with reason
+POST /periods/{id}/lock           ← FR-B3: lock accounting period
+POST /users                       ← FR-B1: create user
+POST /users/{id}/roles            ← FR-B1: assign role
 ```
 
 ### Bulk Operations (Phase 2)
@@ -1032,7 +1041,7 @@ GET  /jobs/{job_id}               ← poll async job status
 ### Reporting APIs (Phase 2)
 
 ```
-GET /reports/consolidated         ← FR14: consolidated multi-entity report
-GET /reports/reconciliation       ← FR9: AR vs GL reconciliation status
-GET /audit-log                    ← FR12: SOX audit trail
+GET /reports/consolidated         ← FR-B4: consolidated multi-entity report
+GET /reports/reconciliation       ← FR-B2: AR vs GL reconciliation status
+GET /audit-log                    ← FR-B2: SOX audit trail
 ```

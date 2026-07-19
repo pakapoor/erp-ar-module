@@ -357,6 +357,20 @@ else
   echo "Migration 006 already present"
 fi
 
+aging_uses_base_currency="$(
+  docker compose exec -T db psql -U erp_user -d erp_db -Atc \
+    "SELECT POSITION(
+       'base_balance_amount' IN pg_get_viewdef('ar_aging'::regclass, true)
+     ) > 0;"
+)"
+if [ "$aging_uses_base_currency" != "t" ]; then
+  docker compose exec -T db psql -U erp_user -d erp_db \
+    -v ON_ERROR_STOP=1 \
+    -f /docker-entrypoint-initdb.d/007_base_currency_ar_aging.sql
+else
+  echo "Migration 007 already present"
+fi
+
 log "Refreshing the aging snapshot for deterministic health verification"
 docker compose exec -T db psql -U erp_user -d erp_db \
   -v ON_ERROR_STOP=1 \

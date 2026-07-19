@@ -67,31 +67,62 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         checks["materialized_view_status"] = f"unknown: {str(e)}"
 
     # ── Reconciliation status ──────────────────────────────
-    # Check AR subledger = GL account 1200 balance
+    # Check posted AR subledger = base-currency GL account 1200 balance for
+    # every tenant/entity. DRAFT invoices have not posted to the GL.
     try:
         result = await db.execute(
             text("""
+                WITH entity_keys AS (
+                    SELECT tenant_id, entity_id FROM invoice
+                    UNION
+                    SELECT tenant_id, entity_id FROM gl_account
+                ),
+                subledger AS (
+                    SELECT tenant_id, entity_id,
+                           COALESCE(SUM(base_balance_amount), 0) AS balance
+                    FROM invoice
+                    WHERE status IN ('APPROVED', 'SENT', 'PARTIALLY_PAID')
+                    GROUP BY tenant_id, entity_id
+                ),
+                general_ledger AS (
+                    SELECT ga.tenant_id, ga.entity_id,
+                           COALESCE(
+                               SUM(jel.base_debit_amount)
+                               - SUM(jel.base_credit_amount),
+                               0
+                           ) AS balance
+                    FROM journal_entry_line jel
+                    JOIN gl_account ga ON ga.id = jel.gl_account_id
+                    WHERE ga.account_code = '1200'
+                    GROUP BY ga.tenant_id, ga.entity_id
+                )
                 SELECT
-                    (SELECT COALESCE(SUM(balance_amount), 0)
-                     FROM invoice
-                     WHERE status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
-                    ) as subledger_balance,
-                    (SELECT COALESCE(SUM(jel.debit_amount) - SUM(jel.credit_amount), 0)
-                     FROM journal_entry_line jel
-                     JOIN gl_account ga ON ga.id = jel.gl_account_id
-                     WHERE ga.account_code = '1200'
-                    ) as gl_balance
+                    COALESCE(SUM(COALESCE(s.balance, 0)), 0) AS subledger_balance,
+                    COALESCE(SUM(COALESCE(g.balance, 0)), 0) AS gl_balance,
+                    COALESCE(
+                        MAX(ABS(COALESCE(s.balance, 0) - COALESCE(g.balance, 0))),
+                        0
+                    ) AS max_entity_diff,
+                    COUNT(*) FILTER (
+                        WHERE ABS(COALESCE(s.balance, 0) - COALESCE(g.balance, 0)) >= 0.01
+                    ) AS mismatched_entities
+                FROM entity_keys k
+                LEFT JOIN subledger s
+                  ON s.tenant_id = k.tenant_id AND s.entity_id = k.entity_id
+                LEFT JOIN general_ledger g
+                  ON g.tenant_id = k.tenant_id AND g.entity_id = k.entity_id
             """)
         )
         row = result.fetchone()
         if row:
-            diff = abs(float(row.subledger_balance) - float(row.gl_balance))
-            if diff < 0.01:
+            diff = float(row.max_entity_diff)
+            if row.mismatched_entities == 0:
                 checks["reconciliation_status"] = "MATCHED"
                 checks["last_reconciliation"] = datetime.utcnow().isoformat()
             else:
                 checks["reconciliation_status"] = "MISMATCH"
                 checks["reconciliation_diff"] = round(diff, 4)
+                checks["mismatched_entities"] = row.mismatched_entities
                 overall = "unhealthy"
                 logger.error(
                     f"RECONCILIATION MISMATCH DETECTED! "

@@ -42,7 +42,7 @@ labels them required prototype endpoints/functionality.
 |---|---|---|---|---|---|
 | DA1 | ER model with Customer, Invoice, Line Item, Payment, Credit Memo, GL Account and Journal Entry | Complete | Tables/models exist | `COMPLETE` | `docs/data-model.md`, ER diagrams, migration 001 |
 | DA2 | Tenant isolation with multi-entity/subsidiary structure | Complete | Same-tenant sibling-entity isolation tested | `COMPLETE` | Tenant → Entity model and entity-scoped idempotency |
-| DA3 | Base vs transaction currency and exchange-rate storage | Complete | Migration, live ECB ingestion and rate provenance implemented; financial APIs pending | `IN PROGRESS` | Approved design: `docs/fx-rate-design.md`; never silently default missing FX rates to 1.0 |
+| DA3 | Base vs transaction currency and exchange-rate storage | Complete | Live ECB ingestion plus API1 immutable rate/base-amount snapshots implemented; payment FX pending | `IN PROGRESS` | Approved design: `docs/fx-rate-design.md`; never silently default missing FX rates to 1.0 |
 | DA4 | Audit trail: who changed what and when | Complete | DB triggers implemented | `COMPLETE` | Application sets transaction-local actor context |
 | DA5 | Invoice-to-GL accounting | Complete | Implemented/tested | `COMPLETE` | Approval journal balances |
 | DA6 | Payment recording and allocation | Complete | Implemented/tested | `COMPLETE` | Payment, allocation, invoice and journal commit atomically |
@@ -79,7 +79,7 @@ one instead of silently expanding scope.
 
 | ID | Capability | Current position | Status | Decision / next action |
 |---|---|---|---|---|
-| B1 | Full multi-currency and exchange-rate handling | ECB worker/import job and immutable rates implemented; base GL/realized FX pending | `IN PROGRESS` | Complete invoice/payment integration and end-to-end deterministic FX tests from `docs/fx-rate-design.md` |
+| B1 | Full multi-currency and exchange-rate handling | ECB ingestion and foreign invoice creation implemented; payment-date rate and realized FX pending | `IN PROGRESS` | Complete API4 integration and remaining end-to-end tests from `docs/fx-rate-design.md` |
 | B2 | Intercompany invoicing and elimination | Schema/design only | `V2` | Review after B1; do not claim implementation |
 | B3 | Revenue recognition schedules/deferred revenue | Neither sufficient design nor implementation yet | `PARTIAL` | Must at least complete the required design discussion; then decide implementation vs V2 |
 | B4 | Odoo module or SAP integration patterns | FastAPI solution chosen | `NOT PLANNED` | Optional bonus; unrelated rewrite would weaken the submission |
@@ -100,12 +100,12 @@ the interview story separates prototype correctness from production readiness.
 | NFR2 | Aggregate journal balancing at database boundary | Application creates balanced journals; line constraints exist | `V2` | Deferred DB constraint trigger rejects an unbalanced posted journal |
 | NFR3 | Defense-in-depth PostgreSQL RLS | Policies exist but owner runtime can bypass them | `V2` | Non-owner runtime role, `FORCE ROW LEVEL SECURITY`, negative DB tests |
 | NFR4 | Immutable audit and posted journals | Audit triggers exist; physical UPDATE/DELETE denial is not enforced | `V2` | Separate privileges/triggers plus retention and tamper monitoring |
-| NFR5 | Production JWT/TLS | Dual JWT verification works locally over HTTP | `V2` | TLS at Envoy, required issuer/audience, asymmetric keys and rotation |
-| NFR6 | Distributed per-tenant rate limiting | Envoy local per-instance bucket | `V2` | Shared rate-limit service with tenant descriptors and tests |
-| NFR7 | Outbox operations | Retry/DEAD state implemented | `V2` | DEAD alerting/replay, retention, metrics and downstream deduplication proof |
-| NFR8 | Managed backup/restore proof | Strategy documented | `V2` | PITR configuration, measured RPO/RTO and successful restore drill |
-| NFR9 | Zero-downtime production delivery | Safe Compose deployment exists | `V2` | Versioned migration runner, readiness/draining and rolling/blue-green test |
-| NFR10 | Reporting scale | Aging MV and journal pagination implemented | `V2` | Representative load test, query plan evidence and replica/reporting decision |
+| NFR-B1 | Production JWT/TLS | Dual JWT verification works locally over HTTP | `V2` | TLS at Envoy, required issuer/audience, asymmetric keys and rotation |
+| NFR-B2 | Distributed per-tenant rate limiting | Envoy local per-instance bucket | `V2` | Shared rate-limit service with tenant descriptors and tests |
+| NFR-B3 | Outbox operations | Retry/DEAD state implemented | `V2` | DEAD alerting/replay, retention, metrics and downstream deduplication proof |
+| NFR-B1 | Managed backup/restore proof | Strategy documented | `V2` | PITR configuration, measured RPO/RTO and successful restore drill |
+| NFR-B2 | Zero-downtime production delivery | Safe Compose deployment exists | `V2` | Versioned migration runner, readiness/draining and rolling/blue-green test |
+| NFR-B3 | Reporting scale | Aging MV and journal pagination implemented | `V2` | Representative load test, query plan evidence and replica/reporting decision |
 
 ## F. Submission Completion
 
@@ -127,5 +127,5 @@ Work through only one item at a time:
 3. `NFR1` — Payment concurrency test decision
 4. `B2` — Intercompany decision
 5. `B6`–`B9` — Amendment and period-management decisions
-6. `NFR2`–`NFR10` — Production-hardening decisions
+6. `NFR2`–`NFR-B3` — Production-hardening decisions
 7. `SUB4`–`SUB6` — Candidate/final-submission completion

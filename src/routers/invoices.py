@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 from datetime import datetime, timedelta, date
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -13,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from src.database import get_db
 from src.auth import CurrentUser, get_current_user, require_role
 from src.models import (
-    Invoice, InvoiceLineItem, Customer, Entity, AccountingPeriod,
+    Invoice, InvoiceLineItem, Customer, Entity, AccountingPeriod, ExchangeRate,
     JournalEntry, JournalEntryLine, GLAccount,
     IdempotencyKey, DeliveryOutbox, AuditLog,
     PaymentAllocation, Payment, CreditMemo
@@ -45,6 +46,9 @@ PAYMENT_TERMS_DAYS = {
 GL_AR = "1200"          # Accounts Receivable
 GL_REVENUE = "3100"     # Sales Revenue
 GL_TAX_PAYABLE = "2200" # Tax Payable
+
+FX_RATE_MAX_AGE_DAYS = 3
+BASE_AMOUNT_QUANTUM = Decimal("0.0001")
 
 
 # ============================================================
@@ -160,6 +164,57 @@ def calculate_line_totals(line):
     return subtotal, tax_amount, total_price
 
 
+def convert_to_base(amount: Decimal, exchange_rate: Decimal) -> Decimal:
+    """Convert to the stored base-currency precision."""
+    return (amount * exchange_rate).quantize(
+        BASE_AMOUNT_QUANTUM,
+        rounding=ROUND_HALF_UP,
+    )
+
+
+async def resolve_invoice_exchange_rate(
+    db: AsyncSession,
+    tenant_id: str,
+    transaction_currency: str,
+    base_currency: str,
+    invoice_date: date,
+) -> tuple[Optional[str], Decimal]:
+    """Return the immutable approved rate snapshot applicable to an invoice."""
+    if transaction_currency == base_currency:
+        return None, Decimal("1")
+
+    result = await db.execute(
+        select(ExchangeRate)
+        .where(
+            and_(
+                ExchangeRate.tenant_id == tenant_id,
+                ExchangeRate.from_currency == transaction_currency,
+                ExchangeRate.to_currency == base_currency,
+                ExchangeRate.rate_type == "DAILY_REFERENCE",
+                ExchangeRate.status == "APPROVED",
+                ExchangeRate.effective_date <= invoice_date,
+                ExchangeRate.effective_date >= (
+                    invoice_date - timedelta(days=FX_RATE_MAX_AGE_DAYS)
+                ),
+            )
+        )
+        .order_by(ExchangeRate.effective_date.desc(), ExchangeRate.approved_at.desc())
+        .limit(1)
+    )
+    exchange_rate = result.scalar_one_or_none()
+    if not exchange_rate:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "FX_RATE_UNAVAILABLE: no approved "
+                f"{transaction_currency}/{base_currency} rate on or before "
+                f"{invoice_date} within the {FX_RATE_MAX_AGE_DAYS}-day freshness limit"
+            ),
+        )
+
+    return exchange_rate.id, exchange_rate.rate
+
+
 # ============================================================
 # API1: POST /invoices
 # FR1 — Invoice creation
@@ -224,11 +279,6 @@ async def create_invoice(
         )
     )
     base_currency = entity_currency_result.scalar_one()
-    if payload.currency != base_currency:
-        raise HTTPException(
-            status_code=503,
-            detail="FX_RATE_UNAVAILABLE: foreign-currency import is not active yet",
-        )
 
     # ── Begin ACID transaction ─────────────────────────────
     await create_idempotency_key(
@@ -255,10 +305,23 @@ async def create_invoice(
     grand_total = subtotal_total + tax_total
     due_date = calculate_due_date(payload.invoice_date, payload.payment_terms)
 
+    # Snapshot the approved rate and all base-currency values. Later rate
+    # imports cannot rewrite the accounting value of this invoice.
+    exchange_rate_id, exchange_rate = await resolve_invoice_exchange_rate(
+        db,
+        current_user.tenant_id,
+        payload.currency,
+        base_currency,
+        payload.invoice_date,
+    )
+    base_subtotal_total = convert_to_base(subtotal_total, exchange_rate)
+    base_tax_total = convert_to_base(tax_total, exchange_rate)
+    base_grand_total = base_subtotal_total + base_tax_total
+
     # ── Credit limit check ─────────────────────────────────
     # Sum outstanding AR for this customer
     outstanding_result = await db.execute(
-        select(text("COALESCE(SUM(balance_amount), 0)")).select_from(Invoice).where(
+        select(text("COALESCE(SUM(base_balance_amount), 0)")).select_from(Invoice).where(
             and_(
                 Invoice.customer_id == payload.customer_id,
                 Invoice.tenant_id == current_user.tenant_id,
@@ -268,16 +331,13 @@ async def create_invoice(
         )
     )
     outstanding = outstanding_result.scalar() or 0
-    if customer.credit_limit > 0 and (outstanding + grand_total) > customer.credit_limit:
+    if customer.credit_limit > 0 and (outstanding + base_grand_total) > customer.credit_limit:
         raise BusinessRuleException(
             "CREDIT_LIMIT_EXCEEDED",
             f"Credit limit of {customer.credit_limit} would be exceeded"
         )
 
     # ── Get exchange rate ──────────────────────────────────
-    # For prototype: use 1.0 if same currency as tenant base
-    exchange_rate = 1  # TODO: fetch from exchange_rate table
-
     # ── Create invoice ─────────────────────────────────────
     invoice = Invoice(
         tenant_id=current_user.tenant_id,
@@ -286,16 +346,17 @@ async def create_invoice(
         po_reference=payload.po_reference,
         status="DRAFT",
         transaction_currency=payload.currency,
+        exchange_rate_id=exchange_rate_id,
         exchange_rate=exchange_rate,
         base_currency=base_currency,
         subtotal_amount=subtotal_total,
         tax_amount=tax_total,
         total_amount=grand_total,
         balance_amount=grand_total,
-        base_subtotal_amount=subtotal_total,
-        base_tax_amount=tax_total,
-        base_total_amount=grand_total,
-        base_balance_amount=grand_total,
+        base_subtotal_amount=base_subtotal_total,
+        base_tax_amount=base_tax_total,
+        base_total_amount=base_grand_total,
+        base_balance_amount=base_grand_total,
         invoice_date=payload.invoice_date,
         due_date=due_date,
         payment_terms=payload.payment_terms,
@@ -342,11 +403,17 @@ async def create_invoice(
         "due_date": str(invoice.due_date),
         "payment_terms": invoice.payment_terms,
         "currency": invoice.transaction_currency,
+        "base_currency": invoice.base_currency,
+        "exchange_rate_id": invoice.exchange_rate_id,
         "exchange_rate": str(invoice.exchange_rate),
         "subtotal_amount": str(invoice.subtotal_amount),
         "tax_amount": str(invoice.tax_amount),
         "total_amount": str(invoice.total_amount),
         "balance_amount": str(invoice.balance_amount),
+        "base_subtotal_amount": str(invoice.base_subtotal_amount),
+        "base_tax_amount": str(invoice.base_tax_amount),
+        "base_total_amount": str(invoice.base_total_amount),
+        "base_balance_amount": str(invoice.base_balance_amount),
         "created_by": invoice.created_by,
         "approved_by": None,
         "created_at": invoice.created_at.isoformat(),
@@ -501,11 +568,17 @@ async def get_invoice(
         "due_date": str(invoice.due_date),
         "payment_terms": invoice.payment_terms,
         "currency": invoice.transaction_currency,
+        "base_currency": invoice.base_currency,
+        "exchange_rate_id": invoice.exchange_rate_id,
         "exchange_rate": str(invoice.exchange_rate),
         "subtotal_amount": str(invoice.subtotal_amount),
         "tax_amount": str(invoice.tax_amount),
         "total_amount": str(invoice.total_amount),
         "balance_amount": str(invoice.balance_amount),
+        "base_subtotal_amount": str(invoice.base_subtotal_amount),
+        "base_tax_amount": str(invoice.base_tax_amount),
+        "base_total_amount": str(invoice.base_total_amount),
+        "base_balance_amount": str(invoice.base_balance_amount),
         "line_items": [
             {
                 "id": li.id,

@@ -5,18 +5,18 @@
 - [FR2 — Invoice Approval](#fr2--invoice-approval)
 - [FR3 — Invoice Sending](#fr3--invoice-sending)
 - [FR4 — Payment Recording and Allocation](#fr4--payment-recording-and-allocation)
-- [FR5 — Credit Memo](#fr5--credit-memo)
-- [FR6 — Write-off](#fr6--write-off)
-- [FR7 — Invoice Void](#fr7--invoice-void)
-- [FR8 — AR Aging Report](#fr8--ar-aging-report)
-- [FR9 — GL Journal Entries and Reconciliation](#fr9--gl-journal-entries-and-reconciliation)
-- [FR10 — Multi-tenant Isolation](#fr10--multi-tenant-isolation)
-- [FR11 — Multi-currency](#fr11--multi-currency)
-- [FR12 — Audit Trail](#fr12--audit-trail)
-- [FR13 — Period Close](#fr13--period-close)
-- [FR14 — Multi-entity and Intercompany](#fr14--multi-entity-and-intercompany)
-- [FR15 — Manual Journal Entry](#fr15--manual-journal-entry)
-- [FR16 — User Management and RBAC](#fr16--user-management-and-rbac)
+- [FR-B1 — Credit Memo](#fr5--credit-memo)
+- [FR-B2 — Write-off](#fr6--write-off)
+- [FR-B3 — Invoice Void](#fr7--invoice-void)
+- [FR-B1 — AR Aging Report](#fr8--ar-aging-report)
+- [FR-B2 — GL Journal Entries and Reconciliation](#fr9--gl-journal-entries-and-reconciliation)
+- [FR-B3 — Multi-tenant Isolation](#fr10--multi-tenant-isolation)
+- [FR-B1 — Multi-currency](#fr11--multi-currency)
+- [FR-B2 — Audit Trail](#fr12--audit-trail)
+- [FR-B3 — Period Close](#fr13--period-close)
+- [FR-B4 — Multi-entity and Intercompany](#fr14--multi-entity-and-intercompany)
+- [FR-B5 — Manual Journal Entry](#fr15--manual-journal-entry)
+- [FR-B1 — User Management and RBAC](#fr16--user-management-and-rbac)
 
 ---
 
@@ -282,7 +282,7 @@ Net FX Gain: ₹3,000
 
 ---
 
-## FR5 — Credit Memo
+## FR-B1 — Credit Memo
 
 A credit memo is issued to correct an approved/sent/paid invoice. It cannot be raised against draft or void invoices. Credit memos have their own approval lifecycle. On approval, GL entries are automatically reversed.
 
@@ -327,7 +327,7 @@ States: Draft → Approved → Applied
 
 ---
 
-## FR6 — Write-off
+## FR-B2 — Write-off
 
 A write-off is raised when a customer cannot pay (bankruptcy, absconding, bad debt). It removes the outstanding amount from AR and records it as Bad Debt Expense. Requires CFO approval due to revenue impact. Write-off applies only to outstanding balance — already paid amount is never reversed.
 
@@ -374,7 +374,7 @@ Invoice Status: Written Off
 
 ---
 
-## FR7 — Invoice Void
+## FR-B3 — Invoice Void
 
 An invoice is voided when it should never have been raised or was raised in error. Void is different from write-off — write-off is customer cannot pay, void is invoice itself was wrong. Cannot void a paid or partially paid invoice — use credit memo instead.
 
@@ -412,7 +412,7 @@ Invoice Status: Void ✅
 
 ---
 
-## FR8 — AR Aging Report
+## FR-B1 — AR Aging Report
 
 System must generate AR aging report showing outstanding invoice balances grouped by days overdue. Used by CFO and collections team to track overdue payments and identify write-off candidates.
 
@@ -429,6 +429,8 @@ historical date.
 **Calculation:**
 - days_overdue = today - due_date
 - Bucket assigned based on days_overdue
+- Amount = open `base_balance_amount` in the entity's base currency
+- Include only APPROVED, SENT and PARTIALLY_PAID invoices; DRAFT has not posted AR
 
 ```
 GET /customers/{id}/aging
@@ -460,7 +462,7 @@ Invoice detail:
 
 ---
 
-## FR9 — GL Journal Entries and Reconciliation
+## FR-B2 — GL Journal Entries and Reconciliation
 
 System must maintain complete journal entry trail for every financial event. All journal entries must be immutable. AR subledger must reconcile to GL at all times. Nightly reconciliation job detects and alerts on any mismatch.
 
@@ -523,7 +525,7 @@ COMMIT
 
 ---
 
-## FR10 — Multi-tenant Isolation
+## FR-B3 — Multi-tenant Isolation
 
 System must completely isolate data between tenants. No tenant can ever see another tenant's data. Isolation enforced at both application layer (JWT) and database layer (Row Level Security). Every table contains tenant_id. Every query filters by tenant_id.
 
@@ -586,7 +588,7 @@ ERP: WHERE tenant_id=X AND entity_id=Y
 
 ---
 
-## FR11 — Multi-currency
+## FR-B1 — Multi-currency
 
 **Implementation status:** `IN PROGRESS` — ingestion migration, daily schedule,
 live ECB worker and deterministic feed tests are complete; invoice/payment FX
@@ -679,7 +681,7 @@ Audit trail:  Records immutable rate ID, value, source date and reason
 
 ---
 
-## FR12 — Audit Trail
+## FR-B2 — Audit Trail
 
 Every financial record change must be captured in audit log. Stores who, what, when, old value, new value. Immutable — never deleted. Retained 7 years for SOX compliance. Implemented as audit table for quick queries + Kafka for event replay and S3 WORM for long term archival.
 
@@ -714,7 +716,7 @@ S3 WORM                  → compliance archival (immutable)
 
 ---
 
-## FR13 — Period Close
+## FR-B3 — Period Close
 
 System must support monthly and yearly period close. Once a period is closed, no new transactions can be posted to that period. Two levels of closure: CLOSED (CFO can reopen) and LOCKED (permanent, after audit/tax filing). Enforced at both application and database level.
 
@@ -778,7 +780,7 @@ entries are never backdated into a LOCKED period.
 
 ---
 
-## FR14 — Multi-entity and Intercompany
+## FR-B4 — Multi-entity and Intercompany
 
 System must support multiple legal entities within one tenant. Invoices between entities of the same tenant are flagged as intercompany and eliminated from consolidated reports. Each entity maintains its own GL and books.
 
@@ -838,7 +840,7 @@ is_intercompany:   FALSE ✅
 
 ---
 
-## FR15 — Manual Journal Entry
+## FR-B5 — Manual Journal Entry
 
 System must support manual journal entries for corrections, prior period adjustments, and write-off corrections. Manual entries require CFO approval and mandatory description. Full audit trail captured. Cannot be posted to locked periods.
 
@@ -883,7 +885,7 @@ Posted:   System Feb 5 11:00
 
 ---
 
-## FR16 — User Management and RBAC
+## FR-B1 — User Management and RBAC
 
 System must support role-based access control. Each user has one or more roles. Roles determine what actions a user can perform. SOX requires strict segregation of duties — same user cannot create and approve the same invoice.
 

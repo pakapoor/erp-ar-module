@@ -7,7 +7,7 @@ from sqlalchemy import select, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database import get_db
 from src.auth import CurrentUser, get_current_user
-from src.models import Customer, Invoice
+from src.models import Customer, Entity, Invoice
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -47,6 +47,16 @@ async def get_customer_aging(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
+    currency_result = await db.execute(
+        select(Entity.currency).where(
+            and_(
+                Entity.id == eid,
+                Entity.tenant_id == current_user.tenant_id,
+            )
+        )
+    )
+    base_currency = currency_result.scalar_one()
+
     # ── Read from materialized view ────────────────────────
     # ar_aging MV is refreshed every 5 mins by pg_cron
     mv_result = await db.execute(
@@ -81,7 +91,7 @@ async def get_customer_aging(
     # This handles edge case where MV hasn't refreshed yet
     if not row:
         return await _compute_aging_live(
-            db, customer, eid, current_user.tenant_id
+            db, customer, eid, current_user.tenant_id, base_currency
         )
 
     # ── Build response ─────────────────────────────────────
@@ -95,7 +105,7 @@ async def get_customer_aging(
         "entity_id": eid,
         "as_of": row.as_of.isoformat() if row.as_of else datetime.utcnow().isoformat(),
         "data_freshness": "5 minutes",
-        "currency": customer.currency,
+        "currency": base_currency,
         "buckets": {
             "current": {
                 "amount": str(row.current_amount or 0),
@@ -145,8 +155,8 @@ async def _get_bucket_invoice_ids(
             WHERE tenant_id = :tenant_id
               AND entity_id = :entity_id
               AND customer_id = :customer_id
-              AND status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
-              AND balance_amount > 0
+              AND status IN ('APPROVED', 'SENT', 'PARTIALLY_PAID')
+              AND base_balance_amount > 0
         """),
         {
             "tenant_id": tenant_id,
@@ -165,6 +175,7 @@ async def _compute_aging_live(
     customer,
     entity_id: str,
     tenant_id: str,
+    base_currency: str,
 ) -> JSONResponse:
     """
     Fallback: compute aging live if MV not yet populated.
@@ -174,7 +185,7 @@ async def _compute_aging_live(
         text("""
             SELECT
                 id,
-                balance_amount,
+                base_balance_amount,
                 CASE
                     WHEN due_date >= CURRENT_DATE THEN 'current'
                     WHEN due_date >= CURRENT_DATE - INTERVAL '30 days' THEN 'days_30'
@@ -185,8 +196,8 @@ async def _compute_aging_live(
             WHERE tenant_id = :tenant_id
               AND entity_id = :entity_id
               AND customer_id = :customer_id
-              AND status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
-              AND balance_amount > 0
+              AND status IN ('APPROVED', 'SENT', 'PARTIALLY_PAID')
+              AND base_balance_amount > 0
         """),
         {
             "tenant_id": tenant_id,
@@ -206,9 +217,9 @@ async def _compute_aging_live(
 
     for row in rows:
         bucket = row.bucket
-        buckets[bucket]["amount"] += row.balance_amount
+        buckets[bucket]["amount"] += row.base_balance_amount
         buckets[bucket]["invoices"].append(str(row.id))
-        total += row.balance_amount
+        total += row.base_balance_amount
 
     return JSONResponse(
         status_code=200,
@@ -217,7 +228,7 @@ async def _compute_aging_live(
             "entity_id": entity_id,
             "as_of": datetime.utcnow().isoformat(),
             "data_freshness": "live (MV not yet populated)",
-            "currency": customer.currency,
+            "currency": base_currency,
             "buckets": {
                 k: {
                     "amount": str(v["amount"]),

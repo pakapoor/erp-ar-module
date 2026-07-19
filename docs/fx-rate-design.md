@@ -1,9 +1,9 @@
 # FX Rate Ingestion and Multi-Currency Design
 
 **Traceability:** DA3 / B1  
-**Status:** `IN PROGRESS` — migration, pg_cron schedule, live ECB worker and
-deterministic parser/derivation tests complete; invoice/payment FX accounting
-and end-to-end tests pending
+**Status:** `IN PROGRESS` — ingestion and foreign-currency invoice creation are
+implemented and tested; payment-date conversion, realized FX accounting and
+their end-to-end tests remain
 
 ## Scope
 

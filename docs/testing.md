@@ -64,17 +64,19 @@ entries; it creates a fresh, settled invoice for each real concurrency race.
 | Zero Trust application check | A direct Compose-network request with an invalid JWT is independently rejected with HTTP 401 by FastAPI |
 | Trace propagation | Envoy-generated request ID is returned as `X-Trace-ID` by FastAPI |
 | API1 `POST /invoices` | HTTP 201; DRAFT version 1; server-calculated subtotal INR 150,000, tax INR 24,000, total INR 174,000 |
+| API1 foreign-currency invoice | Lowercase `usd` is normalized; an approved USD/INR rate ID and all INR base snapshots are stored; base components balance |
+| API1 stale FX rate | HTTP 503; no invoice is created and the transaction rolls back |
 | API2 `GET /invoices/{id}` | HTTP 200; same invoice and two line items; ETag reflects the current version |
 | API3 `POST /invoices/{id}/approve` | HTTP 200; APPROVED version 2; approval journal ID returned; delivery status QUEUED on a fresh run |
 | Delivery outbox | Approval event reaches DELIVERED within 10 seconds; stub receives the stable delivery-event ID |
 | API4 `POST /payments` | HTTP 201; INR 100,000 allocated; invoice becomes PARTIALLY_PAID with INR 74,000 balance |
 | API4 same-key retry | Original payment ID and response are returned; no second payment is created |
-| API5 customer aging | HTTP 200; current bucket contains one invoice totaling INR 74,000 |
+| API5 customer aging | HTTP 200; current bucket contains one posted invoice totaling INR 74,000; foreign DRAFT invoices are excluded |
 | API6 invoice journals | HTTP 200; two entries; every entry balances; net GL AR is INR 74,000 |
 | API6 pagination pages 1 and 2 | One distinct journal per page; `total=2`, `total_pages=2`; both retain invoice-wide net AR INR 74,000 |
 | API6 pagination page 3 | HTTP 200 with an empty journal list and unchanged invoice-wide summary |
 | API6 invalid pagination | HTTP 422 for page 0 and page size 101 |
-| API7 health | HTTP 200; database healthy and AR/GL reconciliation MATCHED |
+| API7 health | HTTP 200; every entity's posted base-currency AR subledger matches its base-currency AR GL |
 | Cross-tenant read | HTTP 404 so record existence is concealed |
 | Cross-entity invoice/journal/aging reads | HTTP 404 so sibling-entity records are concealed |
 | Cross-entity idempotency-key collision | HTTP 404; another entity's cached response is never returned |
@@ -164,18 +166,19 @@ Expected:
   inserts one daily `fx_import_job`
 
 The FX worker claims the import, validates one coherent ECB batch, derives
-foreign→INR pairs, and stores tenant-approved immutable rows. B1 remains
-`IN PROGRESS` until invoice/payment accounting and deterministic FX tests pass.
+foreign→INR pairs, and stores tenant-approved immutable rows. API1 now locks
+the applicable rate and snapshots transaction/base amounts. B1 remains
+`IN PROGRESS` until payment accounting and the remaining FX tests pass.
 
 Deterministic feed tests:
 
 ```bash
 docker compose exec -T app \
-  python -m unittest -q src.tests.test_fx_rate_worker
+  python -m unittest -q src.tests.test_fx_rate_worker src.tests.test_invoice_fx
 ```
 
-Expected: four tests pass, covering the cross-rate formula plus rejection of a
-missing currency, mixed provider dates and nonpositive quotes.
+Expected: seven tests pass, covering feed validation/derivation, financial
+rounding, lowercase normalization and unsupported-currency rejection.
 
 Inspect the optional live import (internet availability is deliberately not a
 gate for the deterministic suite):
