@@ -4,11 +4,28 @@
 is intentionally safe for a developer workstation: it never deletes the named
 PostgreSQL volume and does not reset financial data.
 
-## Prerequisites
+## Automatic prerequisites
 
-- Docker Desktop with Docker Compose v2
+`deploy.sh` checks its host dependencies before deployment. When one is
+missing, it installs it using Homebrew on macOS or `apt-get`/`dnf`/`yum` on
+Linux:
+
+- Docker (Docker Desktop on macOS, Docker Engine on Linux)
+- Docker Compose v2
 - `curl`
-- ports 5432, 8000, and 9000 available
+- Python 3 when `--test` is selected
+
+On macOS, Homebrew must already be installed because silently bootstrapping a
+system package manager is outside this project's deployment boundary. On Linux,
+installation or daemon startup may request `sudo` access. Use `--no-install` to
+disable automatic installation and fail on a missing dependency instead.
+
+PostgreSQL is deliberately **not** installed on the host. The custom
+`erp-ar-postgres:16-pgcron` image contains PostgreSQL and pg_cron; Compose starts
+it as the `erp_db` service. A second host installation could conflict on port
+5432 and would not contain the project's initialized schema.
+
+Ports 5432, 8000, and 9000 must be available.
 
 ## Deploy
 
@@ -42,13 +59,14 @@ Delivery stub: http://localhost:9000
 | `./deploy.sh --seed` | Deploy and insert deterministic interview/demo data |
 | `./deploy.sh --test` | Deploy and run the complete API/control integration suite |
 | `./deploy.sh --seed --test` | Explicit seed plus full verification; the test also seeds safely |
+| `./deploy.sh --no-install` | Do not install missing host dependencies |
 
 Run `./deploy.sh --help` for the same option summary.
 
 ## Deployment sequence
 
-1. Verify Docker, Compose configuration, and required commands.
-2. Build and start PostgreSQL plus the delivery/JWKS stub.
+1. Install missing host dependencies, start Docker, and verify Compose.
+2. Build and start the containerized PostgreSQL plus delivery/JWKS stub.
 3. Wait for PostgreSQL readiness.
 4. Apply migration 002 only if aging-count columns are missing.
 5. Idempotently enable pg_cron and ensure exactly one five-minute aging job.

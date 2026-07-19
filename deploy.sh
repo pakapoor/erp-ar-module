@@ -8,6 +8,7 @@ cd "$PROJECT_DIR"
 BUILD_IMAGES=true
 RUN_SEED=false
 RUN_TESTS=false
+AUTO_INSTALL=true
 
 usage() {
   cat <<'EOF'
@@ -16,10 +17,11 @@ Usage: ./deploy.sh [options]
 Deploy the local Docker Compose prototype without deleting its database volume.
 
 Options:
-  --no-build   Reuse existing Docker images
-  --seed       Insert deterministic demonstration data
-  --test       Run the complete integration suite after deployment
-  -h, --help   Show this help
+  --no-build    Reuse existing Docker images
+  --seed        Insert deterministic demonstration data
+  --test        Run the complete integration suite after deployment
+  --no-install  Fail instead of installing missing host dependencies
+  -h, --help    Show this help
 EOF
 }
 
@@ -33,6 +35,9 @@ for argument in "$@"; do
       ;;
     --test)
       RUN_TESTS=true
+      ;;
+    --no-install)
+      AUTO_INSTALL=false
       ;;
     -h|--help)
       usage
@@ -51,25 +56,186 @@ log() {
   echo "==> $1"
 }
 
+command_exists() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+run_as_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
+  elif command_exists sudo; then
+    sudo "$@"
+  else
+    echo "Root access is required to install or start Docker: $*" >&2
+    return 1
+  fi
+}
+
+install_macos_dependency() {
+  local dependency=$1
+
+  if ! command_exists brew; then
+    echo "Homebrew is required for automatic installation on macOS." >&2
+    echo "Install it from https://brew.sh, then rerun ./deploy.sh." >&2
+    return 1
+  fi
+
+  case "$dependency" in
+    docker)
+      log "Installing Docker Desktop"
+      brew install --cask docker
+      ;;
+    curl|python3)
+      log "Installing $dependency"
+      brew install "${dependency/python3/python}"
+      ;;
+  esac
+}
+
+install_linux_dependencies() {
+  local packages=("$@")
+
+  if command_exists apt-get; then
+    log "Installing missing host dependencies: ${packages[*]}"
+    run_as_root apt-get update
+    run_as_root apt-get install -y "${packages[@]}"
+  elif command_exists dnf; then
+    log "Installing missing host dependencies: ${packages[*]}"
+    run_as_root dnf install -y "${packages[@]}"
+  elif command_exists yum; then
+    log "Installing missing host dependencies: ${packages[*]}"
+    run_as_root yum install -y "${packages[@]}"
+  else
+    echo "No supported Linux package manager found (apt-get, dnf, or yum)." >&2
+    return 1
+  fi
+}
+
+ensure_command() {
+  local command_name=$1
+
+  if command_exists "$command_name"; then
+    return 0
+  fi
+  if [ "$AUTO_INSTALL" != true ]; then
+    echo "Required command not found: $command_name" >&2
+    return 1
+  fi
+
+  case "$(uname -s)" in
+    Darwin)
+      install_macos_dependency "$command_name"
+      ;;
+    Linux)
+      case "$command_name" in
+        docker)
+          if command_exists apt-get; then
+            install_linux_dependencies docker.io
+          else
+            install_linux_dependencies docker
+          fi
+          ;;
+        python3) install_linux_dependencies python3 ;;
+        curl) install_linux_dependencies curl ;;
+        *)
+          echo "No automatic installer configured for: $command_name" >&2
+          return 1
+          ;;
+      esac
+      ;;
+    *)
+      echo "Automatic dependency installation is unsupported on $(uname -s)." >&2
+      return 1
+      ;;
+  esac
+
+  if ! command_exists "$command_name"; then
+    echo "Installation completed but '$command_name' is still unavailable." >&2
+    return 1
+  fi
+}
+
+start_docker_daemon() {
+  if docker info >/dev/null 2>&1; then
+    return 0
+  fi
+
+  log "Starting Docker"
+  case "$(uname -s)" in
+    Darwin)
+      open -a Docker
+      ;;
+    Linux)
+      if command_exists systemctl; then
+        run_as_root systemctl start docker
+      elif command_exists service; then
+        run_as_root service docker start
+      else
+        echo "Cannot start Docker: systemctl/service is unavailable." >&2
+        return 1
+      fi
+      ;;
+  esac
+
+  local attempt
+  for ((attempt = 1; attempt <= 90; attempt++)); do
+    if docker info >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "Docker did not become ready within 180 seconds." >&2
+  return 1
+}
+
+ensure_compose() {
+  if docker compose version >/dev/null 2>&1; then
+    return 0
+  fi
+  if [ "$AUTO_INSTALL" != true ]; then
+    echo "Docker Compose v2 is required." >&2
+    return 1
+  fi
+
+  case "$(uname -s)" in
+    Darwin)
+      echo "Docker Desktop was installed, but Compose v2 is unavailable." >&2
+      echo "Open Docker Desktop once, finish its setup, and rerun this script." >&2
+      return 1
+      ;;
+    Linux)
+      if command_exists apt-get; then
+        install_linux_dependencies docker-compose-v2
+      elif command_exists dnf; then
+        install_linux_dependencies docker-compose-plugin
+      elif command_exists yum; then
+        install_linux_dependencies docker-compose-plugin
+      fi
+      ;;
+  esac
+
+  docker compose version >/dev/null 2>&1 || {
+    echo "Docker Compose v2 could not be installed automatically." >&2
+    return 1
+  }
+}
+
 show_failure_context() {
   local exit_code=$?
   set +e
   echo >&2
   echo "Deployment failed. Current service state:" >&2
-  docker compose ps >&2
-  echo >&2
-  echo "Recent service logs:" >&2
-  docker compose logs --tail=60 db app stub delivery_worker >&2
+  if command_exists docker && docker compose version >/dev/null 2>&1; then
+    docker compose ps >&2
+    echo >&2
+    echo "Recent service logs:" >&2
+    docker compose logs --tail=60 db app stub delivery_worker >&2
+  else
+    echo "Docker Compose is not available; service diagnostics were skipped." >&2
+  fi
   exit "$exit_code"
 }
 trap show_failure_context ERR
-
-require_command() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    echo "Required command not found: $1" >&2
-    exit 1
-  fi
-}
 
 wait_for_database() {
   local attempt
@@ -97,14 +263,16 @@ wait_for_url() {
   return 1
 }
 
-require_command docker
-require_command curl
+ensure_command docker
+ensure_command curl
 if [ "$RUN_TESTS" = true ]; then
-  require_command python3
+  ensure_command python3
 fi
 
-log "Checking Docker and Compose"
-docker info >/dev/null
+start_docker_daemon
+ensure_compose
+
+log "Checking Docker Compose configuration"
 docker compose version
 docker compose config --quiet
 
