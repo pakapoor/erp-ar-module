@@ -177,6 +177,9 @@ request/response fields and error contracts remain authoritative in
 - Result: 200 + aging buckets + as_of timestamp
 
 ### ⑥ GET /journal-entries (FR9)
+
+![API6 journal entries retrieval flow](flows/api6_journal_entries_flow.svg)
+
 - Required role: any authenticated user of the same entity
 - `invoice` query parameter required (SOX — must be traceable to source document)
 - Live query — journal entries immutable but must never appear missing (SOX!)
@@ -187,6 +190,9 @@ request/response fields and error contracts remain authoritative in
 - Result: 200 + journal entries + lines + pagination
 
 ### ⑦ GET /health (NFR5)
+
+![API7 health and reconciliation flow](flows/api7_health_flow.svg)
+
 - No auth required — used by Docker, load balancer, DataDog
 - Shows: DB status, MV age, last reconciliation status
 - Reconciles posted invoice base balances to base-currency AR GL per entity

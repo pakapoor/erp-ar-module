@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="470" viewBox="0 0 960 470" role="img">
+  <title>API6 journal entries retrieval flow</title>
+  <desc>Authenticated, tenant-isolated live retrieval of paginated journal entries and invoice-wide AR summary.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#185fa5"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17212b; }
+      .title { font-size: 22px; font-weight: 700; }
+      .subtitle { font-size: 14px; fill: #52606d; }
+      .heading { font-size: 16px; font-weight: 700; }
+      .body { font-size: 13px; }
+      .box { stroke-width: 1.5; rx: 12; }
+      .arrow { fill: none; stroke: #185fa5; stroke-width: 2; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="960" height="470" fill="#fff"/>
+  <text x="480" y="34" text-anchor="middle" class="title">API6 — GET /journal-entries?invoice={id}</text>
+  <text x="480" y="58" text-anchor="middle" class="subtitle">Live, tenant-isolated financial history; no cache or materialized view</text>
+
+  <rect x="30" y="105" width="150" height="95" class="box" fill="#f1efe8" stroke="#5f5e5a"/>
+  <text x="105" y="135" text-anchor="middle" class="heading">CFO / Auditor</text>
+  <text x="105" y="160" text-anchor="middle" class="body">invoice, page, page_size</text>
+  <text x="105" y="181" text-anchor="middle" class="body">Bearer JWT</text>
+
+  <rect x="230" y="105" width="155" height="95" class="box" fill="#eeedfe" stroke="#534ab7"/>
+  <text x="307" y="135" text-anchor="middle" class="heading">L7 Gateway</text>
+  <text x="307" y="160" text-anchor="middle" class="body">JWT signature check</text>
+  <text x="307" y="181" text-anchor="middle" class="body">Rate limiting</text>
+
+  <rect x="435" y="85" width="230" height="135" class="box" fill="#e1f5ee" stroke="#0f6e56"/>
+  <text x="550" y="116" text-anchor="middle" class="heading">AR Application</text>
+  <text x="550" y="141" text-anchor="middle" class="body">Revalidate JWT</text>
+  <text x="550" y="162" text-anchor="middle" class="body">Verify invoice tenant + entity</text>
+  <text x="550" y="183" text-anchor="middle" class="body">Validate pagination (1–100)</text>
+  <text x="550" y="204" text-anchor="middle" class="body">404 if invoice is outside scope</text>
+
+  <rect x="715" y="85" width="215" height="135" class="box" fill="#e6f1fb" stroke="#185fa5"/>
+  <text x="822" y="116" text-anchor="middle" class="heading">PostgreSQL — live query</text>
+  <text x="822" y="141" text-anchor="middle" class="body">journal_entry + lines</text>
+  <text x="822" y="162" text-anchor="middle" class="body">payment allocation + credits</text>
+  <text x="822" y="183" text-anchor="middle" class="body">GL account 1200 summary</text>
+  <text x="822" y="204" text-anchor="middle" class="body">Stable date / created / id order</text>
+
+  <path d="M180 152 H228" class="arrow"/>
+  <path d="M385 152 H433" class="arrow"/>
+  <path d="M665 152 H713" class="arrow"/>
+
+  <rect x="210" y="285" width="540" height="125" class="box" fill="#fff7e6" stroke="#b7791f"/>
+  <text x="480" y="317" text-anchor="middle" class="heading">Build response and verify books</text>
+  <text x="480" y="344" text-anchor="middle" class="body">For each entry: transaction debits = credits AND base debits = credits</text>
+  <text x="480" y="367" text-anchor="middle" class="body">Return lines, currency/base currency, balance flags and deterministic pagination</text>
+  <text x="480" y="390" text-anchor="middle" class="body">AR summary covers the whole invoice—not only the current page</text>
+  <path d="M822 220 V250 H480 V283" class="arrow"/>
+
+  <text x="480" y="445" text-anchor="middle" class="subtitle">Decision: live reads prevent an auditor seeing a journal that exists but has not reached a cache or MV.</text>
+</svg>
