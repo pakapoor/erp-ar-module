@@ -109,7 +109,8 @@ reports healthy rather than leaking an HTTP 500 or crashing.
 
 Run `./tests/run_coverage.sh` for statement and branch coverage of the Python
 unit suite. Coverage is reported separately from the shell-driven integration
-evidence so the reported percentage is not misleading.
+evidence so the reported percentage is not misleading. The verified baseline
+is 70.9% across `src`, and `.coveragerc` fails the command below 70%.
 
 Detailed commands, database inspection queries, expected output, pg_cron
 verification, and an optional delivery-retry drill are in
