@@ -34,8 +34,9 @@ Result: invoice marked paid TWICE → audit finding!
 
 With Serializable:
 Request 1: acquires lock → allocates → commits
-Request 2: waits → reads updated balance 0
-         → invoice already paid → rejects
+Request 2: waits → PostgreSQL detects its stale serializable snapshot
+         → transaction aborts with SQLSTATE 40001
+         → API returns retryable 409 PAYMENT_CONCURRENCY_CONFLICT
 Result: correct ✅
 ```
 
@@ -210,10 +211,18 @@ Server crashes at Step 4:
 → Idempotency key not COMPLETED → reprocessed safely ✅
 ```
 
-The idempotency claim and financial writes share one transaction. A short
-database lock timeout converts a concurrent claim into
-`409 REQUEST_IN_PROGRESS`; no separately committed lease or recovery worker is
-needed for these synchronous APIs.
+The idempotency claim and financial writes share one transaction. PostgreSQL
+serialization/deadlock failures (`40001`/`40P01`) become
+`409 PAYMENT_CONCURRENCY_CONFLICT`; the client retries with the same
+idempotency key. The aborted transaction leaves no payment, allocation,
+journal, balance update or idempotency claim behind.
+
+The repeatable concurrency suite races two distinct full payments in both AUTO
+and MANUAL modes. Each race proves one HTTP 201, one retryable HTTP 409, exactly
+one allocation and payment journal, one payment-driven version increment, zero
+balance and healthy AR/GL reconciliation. The test first lets the asynchronous
+delivery transition settle, so the expected lifecycle is DRAFT v1, APPROVED v2,
+SENT v3 and PAID v4.
 
 **Infrastructure:**
 ```

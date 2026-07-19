@@ -103,6 +103,7 @@ erp-ar-module/
 ├── docker-compose.yml           Local six-service deployment
 ├── deploy.sh                    Safe build, migration, startup and verification
 ├── test_api.sh                  Repeatable API/control integration suite
+├── test_payment_concurrency.sh  AUTO/MANUAL payment race controls
 ├── gateway/
 │   └── envoy.yaml               Public L7 gateway, JWT, tracing and rate limits
 ├── database/

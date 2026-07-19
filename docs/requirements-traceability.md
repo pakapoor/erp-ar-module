@@ -96,7 +96,7 @@ the interview story separates prototype correctness from production readiness.
 
 | ID | NFR/control | Current state | Status | V2 acceptance target |
 |---|---|---|---|---|
-| NFR1 | Full payment concurrency race matrix | SERIALIZABLE and row locks exist; approval race is tested | `PARTIAL` | Race AUTO/MANUAL payments and assert one allocation per balance/reference |
+| NFR1 | Full payment concurrency race matrix | AUTO and MANUAL full-balance races prove one 201/one retryable 409 and one posting | `COMPLETE` | `test_payment_concurrency.sh`; reconciliation remains matched |
 | NFR2 | Aggregate journal balancing at database boundary | Application creates balanced journals; line constraints exist | `V2` | Deferred DB constraint trigger rejects an unbalanced posted journal |
 | NFR3 | Defense-in-depth PostgreSQL RLS | Policies exist but owner runtime can bypass them | `V2` | Non-owner runtime role, `FORCE ROW LEVEL SECURITY`, negative DB tests |
 | NFR4 | Immutable audit and posted journals | Audit triggers exist; physical UPDATE/DELETE denial is not enforced | `V2` | Separate privileges/triggers plus retention and tamper monitoring |
@@ -123,8 +123,7 @@ the interview story separates prototype correctness from production readiness.
 Work through only one item at a time:
 
 1. `B3` — Revenue-recognition design, then implementation/V2 decision
-2. `NFR1` — Payment concurrency test decision
-3. `B2` — Intercompany decision
-4. `B6`–`B9` — Amendment and period-management decisions
-5. `NFR2`–`NFR-B3` — Production-hardening decisions
-6. `SUB4`–`SUB6` — Candidate/final-submission completion
+2. `B2` — Intercompany decision
+3. `B6`–`B9` — Amendment and period-management decisions
+4. `NFR2`–`NFR-B3` — Production-hardening decisions
+5. `SUB4`–`SUB6` — Candidate/final-submission completion

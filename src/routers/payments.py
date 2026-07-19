@@ -8,6 +8,7 @@ from typing import List
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, and_, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
@@ -41,6 +42,25 @@ GL_FX_GAIN_LOSS = "4300"  # FX Gain/Loss
 
 # Invoice statuses that can receive payment
 PAYABLE_STATUSES = ["APPROVED", "SENT", "PARTIALLY_PAID"]
+RETRYABLE_PAYMENT_SQLSTATES = {"40001", "40P01"}
+
+
+def is_retryable_payment_conflict(exc: DBAPIError) -> bool:
+    """Recognize PostgreSQL serialization failures and deadlocks."""
+    original = exc.orig
+    sqlstate = getattr(original, "sqlstate", None)
+    if sqlstate is None:
+        sqlstate = getattr(getattr(original, "__cause__", None), "sqlstate", None)
+    return sqlstate in RETRYABLE_PAYMENT_SQLSTATES
+
+
+def raise_payment_conflict(exc: DBAPIError) -> None:
+    if is_retryable_payment_conflict(exc):
+        raise IdempotencyConflictException(
+            "Concurrent payment changed the invoice. Retry with the same idempotency key.",
+            "PAYMENT_CONCURRENCY_CONFLICT",
+        ) from exc
+    raise exc
 
 
 # ============================================================
@@ -120,18 +140,21 @@ async def auto_allocate(
     Returns list of allocation dicts.
     """
     # Fetch open invoices ordered by due_date ASC (oldest first)
-    result = await db.execute(
-        select(Invoice).where(
-            and_(
-                Invoice.tenant_id == tenant_id,
-                Invoice.entity_id == entity_id,
-                Invoice.customer_id == customer_id,
-                Invoice.transaction_currency == payment_currency,
-                Invoice.status.in_(PAYABLE_STATUSES),
-                Invoice.balance_amount > 0,
-            )
-        ).order_by(Invoice.due_date.asc())
-    )
+    try:
+        result = await db.execute(
+            select(Invoice).where(
+                and_(
+                    Invoice.tenant_id == tenant_id,
+                    Invoice.entity_id == entity_id,
+                    Invoice.customer_id == customer_id,
+                    Invoice.transaction_currency == payment_currency,
+                    Invoice.status.in_(PAYABLE_STATUSES),
+                    Invoice.balance_amount > 0,
+                )
+            ).order_by(Invoice.due_date.asc()).with_for_update()
+        )
+    except DBAPIError as exc:
+        raise_payment_conflict(exc)
     invoices = result.scalars().all()
 
     if not invoices:
@@ -178,18 +201,21 @@ async def manual_allocate(
 
     for item in allocation_items:
         # Fetch and lock invoice
-        result = await db.execute(
-            select(Invoice).where(
-                and_(
-                    Invoice.id == item.invoice_id,
-                    Invoice.tenant_id == tenant_id,
-                    Invoice.entity_id == entity_id,
-                    Invoice.customer_id == customer_id,
-                    Invoice.transaction_currency == payment_currency,
-                    Invoice.status.in_(PAYABLE_STATUSES),
-                )
-            ).with_for_update()  # lock row for serializable
-        )
+        try:
+            result = await db.execute(
+                select(Invoice).where(
+                    and_(
+                        Invoice.id == item.invoice_id,
+                        Invoice.tenant_id == tenant_id,
+                        Invoice.entity_id == entity_id,
+                        Invoice.customer_id == customer_id,
+                        Invoice.transaction_currency == payment_currency,
+                        Invoice.status.in_(PAYABLE_STATUSES),
+                    )
+                ).with_for_update()
+            )
+        except DBAPIError as exc:
+            raise_payment_conflict(exc)
         invoice = result.scalar_one_or_none()
 
         if not invoice:
@@ -591,7 +617,10 @@ async def create_payment(
         201,
         response_body,
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except DBAPIError as exc:
+        raise_payment_conflict(exc)
 
     logger.info(
         f"Payment {payment.id} recorded: {payload.amount} {payload.currency} "

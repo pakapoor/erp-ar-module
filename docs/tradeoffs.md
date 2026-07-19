@@ -76,6 +76,12 @@ Exception: Redis acceptable for non-financial read cache in Phase 2.
 - Payment allocation: Serializable
 - Aging report: Read Committed
 
+AUTO and MANUAL race tests deliberately submit two different payment
+references/idempotency keys against one balance. PostgreSQL commits one and
+aborts the stale transaction; the API maps the retryable database conflict to
+HTTP 409. Accepted cost: Serializable may abort valid concurrent work, so
+clients must retry with the same idempotency key.
+
 ---
 
 ## T5 — Idempotency: Redis vs PostgreSQL

@@ -45,6 +45,7 @@ container deliberately has no host-published port.
 
 ```bash
 ./test_api.sh
+./test_payment_concurrency.sh
 ```
 
 The script safely reruns because seed inserts use `ON CONFLICT DO NOTHING`, the
@@ -52,6 +53,7 @@ main walkthrough uses deterministic idempotency keys, and dynamically created
 concurrency invoices are settled to zero before exit. A rerun returns cached
 walkthrough responses without creating duplicate invoices, payments, or GL
 entries; it creates a fresh, settled invoice for each real concurrency race.
+`deploy.sh --test` runs both scripts.
 
 ### Assertions and expected results
 
@@ -90,6 +92,9 @@ entries; it creates a fresh, settled invoice for each real concurrency race.
 | T6 stale version | HTTP 409 for stale `If-Match` |
 | T6 simultaneous approval | Exactly one HTTP 200 and one HTTP 409; exactly one approval GL entry and one outbox event |
 | T6 cleanup | Control invoice is paid to zero so repeated runs preserve deterministic aging |
+| NFR1 MANUAL payment race | Exactly one HTTP 201 and one retryable 409; one allocation/journal; SENT v3 advances once to PAID v4 |
+| NFR1 AUTO payment race | Same guarantee under FIFO allocation; isolated customer prevents unrelated invoices entering the race |
+| NFR1 reconciliation | Both freshly created control invoices finish at zero balance and health remains HTTP 200/MATCHED |
 
 The final line must be:
 
