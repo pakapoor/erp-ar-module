@@ -145,22 +145,25 @@ Status: Draft → Approved ✅
 
 **Prototype extension implemented asynchronously after approval.**
 
-Approval atomically inserts a PostgreSQL outbox event. A separate worker delivers it to the console stub, retries transient failures, records `sent_at`, and transitions APPROVED to SENT. Payment remains valid while delivery is pending because approval—not notification—establishes the receivable. Production replaces the stub with idempotent Email/EDI/IRP adapters.
+Approval atomically inserts a PostgreSQL outbox event. A separate publisher
+relays it to Standard SQS, and a consumer delivers it to the idempotent console
+stub. Three failed receives redrive to a DLQ. Success records `sent_at` and
+transitions APPROVED to SENT. Payment remains valid while delivery is pending
+because approval—not notification—establishes the receivable. Production
+replaces LocalStack and the stub with managed SQS plus Email/EDI/IRP adapters.
 
 ```
-POST /invoices/{id}/send
+GET  /invoices/{id}/delivery       # inspect durable status and attempts
+POST /delivery-events/{id}/retry   # CFO requeues a DEAD event
 
-Invoice #1001 — Approved by Priya
-Sent to: accounts@tatasteel.com
-Sent at: 2024-01-15 11:00
-Format:  PDF
-Status:  Approved → Sent
+There is deliberately no synchronous /send command. Approval creates the
+delivery fact automatically, and operational retry never repeats accounting.
 ```
 
 ### Future Enhancements (Phase 2)
 - E-invoicing compliance: India IRP/IRN mandate, EU Peppol network, Italy mandate
 - Multiple delivery methods: Email, Customer Portal, EDI
-- Delivery failure retry + alerting
+- Production DLQ alarms, retention and bulk redrive operations
 - B2G compliance for US government contracts
 - Invoice reminder emails (due in 7 days, overdue!)
 - Customer portal

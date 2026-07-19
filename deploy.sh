@@ -229,7 +229,9 @@ show_failure_context() {
     docker compose ps >&2
     echo >&2
     echo "Recent service logs:" >&2
-    docker compose logs --tail=60 gateway db app stub delivery_worker fx_rate_worker >&2
+    docker compose logs --tail=60 \
+      gateway db app stub localstack outbox_publisher delivery_worker \
+      fx_rate_worker >&2
   else
     echo "Docker Compose is not available; service diagnostics were skipped." >&2
   fi
@@ -284,8 +286,8 @@ if [ "$BUILD_IMAGES" = true ]; then
 fi
 up_options=(-d)
 
-log "Starting PostgreSQL and the delivery/JWKS stub"
-docker compose up "${up_options[@]}" db stub
+log "Starting PostgreSQL, LocalStack SQS, and the delivery/JWKS stub"
+docker compose up "${up_options[@]}" db localstack stub
 wait_for_database
 
 log "Applying missing database migrations"
@@ -325,6 +327,24 @@ if [ "$outbox_table" != "delivery_outbox" ]; then
     -f /docker-entrypoint-initdb.d/004_delivery_outbox.sql
 else
   echo "Migration 004 already present"
+fi
+
+outbox_has_sqs_fields="$(
+  docker compose exec -T db psql -U erp_user -d erp_db -Atc \
+    "SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'delivery_outbox'
+         AND column_name = 'sqs_message_id'
+     );"
+)"
+if [ "$outbox_has_sqs_fields" != "t" ]; then
+  docker compose exec -T db psql -U erp_user -d erp_db \
+    -v ON_ERROR_STOP=1 \
+    -f /docker-entrypoint-initdb.d/009_sqs_delivery_pipeline.sql
+else
+  echo "Migration 009 already present"
 fi
 
 idempotency_has_entity="$(
@@ -392,8 +412,9 @@ docker compose exec -T db psql -U erp_user -d erp_db \
   -v ON_ERROR_STOP=1 \
   -c "REFRESH MATERIALIZED VIEW CONCURRENTLY ar_aging" >/dev/null
 
-log "Starting the internal AR application, workers, and L7 gateway"
-docker compose up "${up_options[@]}" app delivery_worker fx_rate_worker gateway
+log "Starting the internal AR application, publishers, workers, and L7 gateway"
+docker compose up "${up_options[@]}" \
+  app outbox_publisher delivery_worker fx_rate_worker gateway
 
 log "Waiting for service health checks"
 wait_for_url "http://localhost:9000/health" "Delivery stub"
@@ -420,6 +441,18 @@ if [ -z "$worker_container" ]; then
   exit 1
 fi
 
+publisher_container="$(docker compose ps --status running --quiet outbox_publisher)"
+if [ -z "$publisher_container" ]; then
+  echo "Outbox publisher is not running" >&2
+  exit 1
+fi
+
+localstack_container="$(docker compose ps --status running --quiet localstack)"
+if [ -z "$localstack_container" ]; then
+  echo "LocalStack SQS is not running" >&2
+  exit 1
+fi
+
 fx_worker_container="$(docker compose ps --status running --quiet fx_rate_worker)"
 if [ -z "$fx_worker_container" ]; then
   echo "FX rate worker is not running" >&2
@@ -436,6 +469,7 @@ if [ "$RUN_TESTS" = true ]; then
   ./test_api.sh
   ./test_payment_concurrency.sh
   ./test_credit_memo.sh
+  ./test_delivery_sqs.sh
 fi
 
 log "Deployment successful"
@@ -445,5 +479,6 @@ echo "L7 Gateway:    http://localhost:8000"
 echo "AR API:        internal app:8080 (not host-published)"
 echo "API docs:      http://localhost:8000/docs"
 echo "Delivery stub: http://localhost:9000"
-echo "Live delivery: docker compose logs -f stub delivery_worker"
+echo "Local SQS:     http://localhost:4566"
+echo "Live delivery: docker compose logs -f outbox_publisher delivery_worker stub"
 echo "Live FX feed:  docker compose logs -f fx_rate_worker"

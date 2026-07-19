@@ -17,7 +17,9 @@ Core request flow:
 Client → Envoy L7 Gateway (:8000) → AR Application (FastAPI, internal :8080) → PostgreSQL
 
 Asynchronous delivery flow:
-AR approval transaction → PostgreSQL delivery_outbox → Outbox Worker → Delivery Stub
+AR approval transaction → PostgreSQL delivery_outbox → Outbox Publisher →
+Standard SQS → Delivery Consumer → Delivery Stub. Three failed SQS receives
+redrive the message to a DLQ.
 
 FX ingestion flow:
 pg_cron → fx_import_job → FX Rate Worker → ECB Data API → exchange_rate
@@ -38,6 +40,9 @@ Key decisions:
 - FX rates: pg_cron enqueues one weekday import; a separate worker owns outbound
   HTTPS, validates ECB reference data, and stores immutable tenant-approved INR
   cross rates. Financial APIs never call the provider synchronously.
+- Delivery: the database outbox closes the DB/broker dual-write gap; Standard
+  SQS provides buffering/redrive, while the stable event ID provides
+  end-to-end idempotency because Standard queues may redeliver.
 
 ---
 
@@ -126,8 +131,12 @@ request/response fields and error contracts remain authoritative in
   - Credit Sales Revenue        base subtotal amount
   - Credit Tax Payable          base tax amount
 - PENDING delivery_outbox event saved in that same transaction
-- Separate worker claims events with FOR UPDATE SKIP LOCKED, calls the delivery
-  stub after commit, retries failures, and records sent_at after success
+- A scalable publisher claims rows with `FOR UPDATE SKIP LOCKED`, publishes to
+  Standard SQS, and records broker metadata
+- The consumer calls the stub with the outbox event ID as its idempotency key,
+  records `sent_at` after success, and deletes SQS only after the DB commit
+- SQS redrives three failed receives to a DLQ; a CFO may requeue a DEAD event
+  through the operations API without changing approval or GL records
 - Audit trigger fires automatically
 - Result: 200, status=APPROVED, version+1, journal_entry_id, delivery_status=QUEUED
 
@@ -183,6 +192,14 @@ request/response fields and error contracts remain authoritative in
 - Reconciles posted invoice base balances to base-currency AR GL per entity
 - Result: 200 healthy or 503 unhealthy
 
+### Delivery operations
+
+- `GET /invoices/{id}/delivery` exposes publish/delivery attempts, SQS message
+  ID, timestamps and the last error within the caller's tenant and entity.
+- `POST /delivery-events/{id}/retry` is CFO-only. It resets only a DEAD durable
+  event to PENDING; the application does not call SQS or the delivery adapter.
+- Repeating an active retry is harmless. Retrying a DELIVERED event returns 409.
+
 ### Bonus lifecycle corrections (FR-B1–FR-B3; basic verification passed)
 
 - `POST /invoices/{id}/credit-memos`: approver/CFO reverses Revenue and
@@ -225,5 +242,7 @@ request/response fields and error contracts remain authoritative in
 - AR Application is stateless → horizontal scaling via load balancer
 - No stickiness needed — JWT carries all context
 - PostgreSQL: primary for writes, read replica for reporting (Phase 2)
+- Outbox publishers scale through `SKIP LOCKED`; SQS consumers scale
+  independently and tolerate duplicates through durable event IDs
 
 ---

@@ -14,7 +14,7 @@ docker compose ps
 The equivalent manual start is `docker compose up -d --build`, but the
 deployment script also performs migration detection and health verification.
 
-Expected: six services are running:
+Expected: eight services are running:
 
 | Service | Container | Expected state | Purpose |
 |---|---|---|---|
@@ -22,7 +22,9 @@ Expected: six services are running:
 | `app` | `erp_app` | Up | FastAPI AR application on internal port 8080 only |
 | `db` | `erp_db` | Up (healthy) | PostgreSQL with pg_cron on port 5432 |
 | `stub` | `erp_stub` | Up | JWKS and delivery console stub on port 9000 |
-| `delivery_worker` | `erp_delivery_worker` | Up | Transactional-outbox consumer |
+| `localstack` | `erp_localstack` | Up (healthy) | Local Standard SQS and DLQ on port 4566 |
+| `outbox_publisher` | `erp_outbox_publisher` | Up | PostgreSQL outbox → SQS relay |
+| `delivery_worker` | `erp_delivery_worker` | Up | SQS → idempotent adapter consumer |
 | `fx_rate_worker` | `erp_fx_rate_worker` | Up | ECB reference-rate importer |
 
 Quick health checks:
@@ -47,6 +49,7 @@ container deliberately has no host-published port.
 ./test_api.sh
 ./test_payment_concurrency.sh
 ./test_credit_memo.sh
+./test_delivery_sqs.sh
 ```
 
 The script safely reruns because seed inserts use `ON CONFLICT DO NOTHING`, the
@@ -54,7 +57,7 @@ main walkthrough uses deterministic idempotency keys, and dynamically created
 concurrency invoices are settled to zero before exit. A rerun returns cached
 walkthrough responses without creating duplicate invoices, payments, or GL
 entries; it creates a fresh, settled invoice for each real concurrency race.
-`deploy.sh --test` runs all three scripts.
+`deploy.sh --test` runs all four scripts.
 
 The B6 suite uses a dedicated control customer, so its intentionally
 outstanding concurrency balances cannot change Tata Steel's deterministic API5
@@ -115,6 +118,12 @@ void and write-off still require their extended acceptance matrices.
 | FR-B3 DRAFT void | Invoice becomes VOID without creating a GL reversal |
 | FR-B2 write-off | CFO clears outstanding INR AR against Bad Debt Expense 4100 |
 | FR-B reconciliation | Health remains HTTP 200/MATCHED after all three lifecycle corrections |
+| SQS happy path | Approval event records a broker ID and reaches DELIVERED through LocalStack |
+| Delivery isolation | Sibling-entity delivery status returns HTTP 404 |
+| At-least-once duplicate | Stub accepts the durable event once and returns its cached result on replay |
+| SQS failure/DLQ | Three adapter failures make the event DEAD and redrive its message to the DLQ |
+| Delivery/financial boundary | Invoice remains APPROVED and its one balanced GL entry remains committed while delivery is DEAD |
+| CFO retry | DEAD → PENDING → DELIVERED; invoice becomes SENT without repeating accounting |
 
 The final line must be:
 
@@ -126,6 +135,12 @@ The focused B6 suite ends with:
 
 ```text
 === All B6 credit-memo assertions passed ===
+```
+
+The focused SQS suite ends with:
+
+```text
+=== Delivery SQS integration tests passed ===
 ```
 
 ## 3. Inspect the final financial state
@@ -150,7 +165,8 @@ Verify the outbox:
 
 ```bash
 docker compose exec -T db psql -U erp_user -d erp_db -P pager=off -c "
-SELECT invoice_id, event_type, status, attempt_count, delivered_at, last_error
+SELECT invoice_id, event_type, status, publish_attempt_count, attempt_count,
+       sqs_message_id, published_at, delivered_at, last_error
 FROM delivery_outbox
 ORDER BY created_at;
 "
@@ -164,14 +180,14 @@ Expected: `INVOICE_APPROVED`, status `DELIVERED`, at least one attempt,
 Open a second terminal before running the suite:
 
 ```bash
-docker compose logs -f stub delivery_worker
+docker compose logs -f outbox_publisher delivery_worker stub
 ```
 
 Expected worker output:
 
 ```text
-HTTP Request: POST http://stub:9000/stub/send-invoice "HTTP/1.1 200 OK"
-Delivered outbox event <delivery-id> for invoice <invoice-id>
+Published outbox event <delivery-id> to SQS message <message-id>
+Delivered SQS event <delivery-id> for invoice <invoice-id>
 ```
 
 Expected stub output includes the same delivery ID and invoice ID, the customer,
@@ -253,60 +269,42 @@ After a five-minute boundary, the latest result should be `succeeded` with
 `REFRESH MATERIALIZED VIEW`. API5 readers retain the previous complete snapshot
 while the concurrent refresh builds the next one.
 
-## 6. Optional delivery retry drill
+## 6. SQS/DLQ recovery drill
 
-This drill intentionally requeues the newest **local test** delivery, so the
-stub may log it twice. That is expected for at-least-once delivery. Do not run
-this against production data.
+Run the focused automated drill; it safely uses a dedicated customer and
+restores the stopped containers on exit:
 
 ```bash
-docker compose stop stub
-
-docker compose exec -T db psql -U erp_user -d erp_db -c "
-UPDATE delivery_outbox
-SET status = 'PENDING',
-    delivered_at = NULL,
-    next_attempt_at = NOW(),
-    locked_at = NULL,
-    last_error = NULL
-WHERE id = (
-  SELECT id FROM delivery_outbox ORDER BY created_at DESC LIMIT 1
-);
-"
-
-sleep 5
-docker compose logs --tail=20 delivery_worker
-docker compose start stub
-sleep 10
-
-docker compose exec -T db psql -U erp_user -d erp_db -P pager=off -c "
-SELECT id, status, attempt_count, delivered_at, last_error
-FROM delivery_outbox
-ORDER BY created_at DESC
-LIMIT 1;
-"
+./test_delivery_sqs.sh
 ```
 
-Expected sequence:
+It stops the delivery adapter, proves three failed receives enter the DLQ,
+checks that approval and GL remain committed, restarts the adapter, and invokes
+the CFO retry API. The durable event returns to DELIVERED and the invoice moves
+to SENT. The old DLQ message is retained locally as failure evidence; a
+production runbook would archive/delete or redrive resolved DLQ messages.
 
-1. While the stub is stopped, the worker logs a failed attempt and persists the
-   error with a future `next_attempt_at`.
-2. After restart, the worker retries the same event ID.
-3. Final status returns to `DELIVERED`, `attempt_count` has increased, and
-   `last_error` is cleared.
-4. The invoice and GL transaction remain committed throughout the outage.
+Inspect queue state directly:
+
+```bash
+docker compose exec -T localstack awslocal sqs list-queues
+docker compose exec -T localstack awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/invoice-delivery-dlq \
+  --attribute-names ApproximateNumberOfMessages
+```
 
 ## 7. Troubleshooting
 
 ```bash
-docker compose logs --tail=100 app db stub delivery_worker
+docker compose logs --tail=100 app db localstack outbox_publisher stub delivery_worker
 ```
 
 - `503` from `/health` with `materialized_view_status=stale`: wait for pg_cron
   or refresh explicitly with
   `REFRESH MATERIALIZED VIEW CONCURRENTLY ar_aging`.
-- Outbox remains PENDING: confirm both `delivery_worker` and `stub` are Up, then
-  inspect `last_error` and `next_attempt_at`.
+- Outbox remains PENDING: confirm LocalStack and `outbox_publisher` are Up.
+- Outbox remains PUBLISHED: confirm `delivery_worker` and `stub` are Up, then
+  inspect `last_error`, SQS queue attributes, and worker logs.
 - Migration/table missing on an old volume: Docker entrypoint migrations only
   run when a volume is first initialized. Preserve the volume and run:
 
@@ -315,6 +313,8 @@ docker compose logs --tail=100 app db stub delivery_worker
   docker compose exec -T db /docker-entrypoint-initdb.d/003_setup_pg_cron.sh
   docker compose exec -T db psql -U erp_user -d erp_db \
     -f /docker-entrypoint-initdb.d/004_delivery_outbox.sql
+  docker compose exec -T db psql -U erp_user -d erp_db \
+    -f /docker-entrypoint-initdb.d/009_sqs_delivery_pipeline.sql
   ```
 
   `deploy.sh` detects and applies migration 005 automatically when idempotency

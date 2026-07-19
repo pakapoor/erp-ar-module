@@ -555,9 +555,13 @@ class DeliveryOutbox(Base):
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    publish_attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_publish_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    sqs_message_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
@@ -567,6 +571,10 @@ class DeliveryOutbox(Base):
         UniqueConstraint("invoice_id", "event_type", name="delivery_outbox_event_unique"),
         Index("idx_delivery_outbox_claim", "status", "next_attempt_at", "created_at"),
         Index("idx_delivery_outbox_tenant", "tenant_id"),
+        Index(
+            "idx_delivery_outbox_invoice",
+            "tenant_id", "entity_id", "invoice_id", "created_at",
+        ),
     )
 
 

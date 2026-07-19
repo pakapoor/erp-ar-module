@@ -4,7 +4,7 @@
 
 This prototype implements the six APIs required by the assessment and demonstrates one complete financial path: create an invoice, retrieve it, approve it, generate the receivable GL entry, apply a partial payment, report aging, and retrieve the resulting journal trail.
 
-The architecture is a modular monolith implemented with FastAPI and PostgreSQL behind an Envoy L7 gateway. This keeps invoice, payment, allocation, audit, GL, and delivery-outbox writes within ACID transaction boundaries. Envoy rejects invalid JWTs early, injects trace IDs, and is the only public AR entry point; the internal FastAPI application independently re-validates JWTs. The application runs with a delivery/JWKS stub plus an outbox worker under Docker Compose.
+The architecture is a modular monolith implemented with FastAPI and PostgreSQL behind an Envoy L7 gateway. This keeps invoice, payment, allocation, audit, GL, and delivery-outbox writes within ACID transaction boundaries. Envoy rejects invalid JWTs early, injects trace IDs, and is the only public AR entry point; the internal FastAPI application independently re-validates JWTs. The application runs with an outbox publisher, LocalStack Standard SQS/DLQ, an idempotent delivery consumer, and a delivery/JWKS stub under Docker Compose.
 
 Production delivery adapters (Email/EDI/IRP), void-and-reissue orchestration,
 intercompany elimination, manual journals, period-management APIs and period-end
@@ -13,7 +13,8 @@ realized gain/loss and failure controls are implemented and tested. Bonus credit
 memo, write-off and void routes have repeatable INR happy-path/reconciliation
 tests, but remain `IN PROGRESS` until their extended financial-control matrix
 passes. The durable delivery
-outbox, retrying worker, and console stub are implemented and tested.
+outbox, SQS/DLQ pipeline, operations endpoints, and console stub are implemented
+with a focused repeatable test.
 
 ## 2. Data Model and Architecture
 
@@ -29,7 +30,8 @@ Core entities:
 - GLAccount, JournalEntry, and JournalEntryLine form the accounting trail.
 - AccountingPeriod controls posting dates.
 - IdempotencyKey and AuditLog provide operational and compliance controls.
-- DeliveryOutbox durably bridges the approval transaction to asynchronous delivery.
+- DeliveryOutbox closes the DB/broker dual-write gap; a publisher relays durable
+  events to Standard SQS and an idempotent consumer invokes the adapter.
 
 ### Tenant and entity isolation
 
@@ -100,7 +102,7 @@ paid/partial balances, concurrency, idempotency, journal visibility and
 reconciliation. CFO write-off and DRAFT/APPROVED/SENT void paths remain only
 partially verified and do not widen the required core lifecycle claim above.
 
-Approval requires a separate approver, an OPEN document-date period, an idempotency key, and the current invoice version through `If-Match`. Approval and payment create their GL entries atomically. Approval also writes a delivery outbox event in the same transaction; the worker later records SENT without making notification success a prerequisite for the receivable.
+Approval requires a separate approver, an OPEN document-date period, an idempotency key, and the current invoice version through `If-Match`. Approval and payment create their GL entries atomically. Approval also writes a delivery outbox event in the same transaction; the publisher and SQS consumer later record SENT without making notification success a prerequisite for the receivable. Three failed receives reach a DLQ, and CFO retry changes only delivery state.
 
 ## 5. API Design and Verification
 
@@ -118,6 +120,11 @@ pass with final reconciliation, but their extended controls remain
 `IN PROGRESS`, separate from the required API table's completion claim.
 
 Operational extension: `GET /health` checks database access, materialized-view age, and AR-to-GL reconciliation.
+
+Delivery operations add `GET /invoices/{id}/delivery` and CFO-only
+`POST /delivery-events/{id}/retry`. The focused suite proves the happy path,
+entity isolation, at-least-once deduplication, DLQ failure path and recovery
+without repeating financial entries.
 
 The complete procedure, expected response values, gateway isolation/JWT checks, database inspection queries,
 pg_cron proof, delivery logs, and retry drill are documented in

@@ -21,6 +21,27 @@ services:
       timeout: 5s
       retries: 5
 
+  localstack:
+    image: localstack/localstack:4.14.0
+    container_name: erp_localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: sqs
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      SQS_ENDPOINT_STRATEGY: path
+      LOCALSTACK_HOST: localstack:4566
+      DEBUG: "0"
+    volumes:
+      - ./localstack/init-sqs.sh:/etc/localstack/init/ready.d/init-sqs.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal sqs get-queue-url --queue-name invoice-delivery >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
   app:
     build: .
     container_name: erp_app
@@ -68,15 +89,44 @@ services:
     environment:
       DATABASE_URL: postgresql://erp_user:erp_password@db:5432/erp_db
       DELIVERY_SERVICE_URL: http://stub:9000
-      OUTBOX_POLL_INTERVAL_SECONDS: 2
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      SQS_ENDPOINT_URL: http://localstack:4566
+      DELIVERY_QUEUE_NAME: invoice-delivery
+      SQS_WAIT_TIME_SECONDS: 2
+      SQS_VISIBILITY_TIMEOUT_SECONDS: 3
     depends_on:
       db:
+        condition: service_healthy
+      localstack:
         condition: service_healthy
       stub:
         condition: service_started
     volumes:
       - ./src:/app/src
     command: python -m src.delivery_worker
+    restart: unless-stopped
+
+  outbox_publisher:
+    build: .
+    container_name: erp_outbox_publisher
+    environment:
+      DATABASE_URL: postgresql://erp_user:erp_password@db:5432/erp_db
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      SQS_ENDPOINT_URL: http://localstack:4566
+      DELIVERY_QUEUE_NAME: invoice-delivery
+      OUTBOX_POLL_INTERVAL_SECONDS: 1
+    depends_on:
+      db:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+    command: python -m src.delivery_publisher
     restart: unless-stopped
 
   fx_rate_worker:

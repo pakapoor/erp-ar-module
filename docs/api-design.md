@@ -5,6 +5,7 @@
 - [API1 — POST /invoices](#api1--post-invoices)
 - [API2 — GET /invoices/{id}](#api2--get-invoicesid)
 - [API3 — POST /invoices/{id}/approve](#api3--post-invoicesidapprove)
+- [Delivery Operations](#delivery-operations)
 - [API4 — POST /payments](#api4--post-payments)
 - [API5 — GET /customers/{id}/aging](#api5--get-customersidaging)
 - [API6 — GET /journal-entries](#api6--get-journal-entries)
@@ -462,11 +463,12 @@ Content-Type: application/json
 Minimal response — client already has full invoice from GET.
 Full details available via GET /invoices/{id} with new version.
 
-After commit, a separate worker claims the event using `FOR UPDATE SKIP LOCKED`
-and calls the delivery stub with the outbox event ID as an idempotency key.
-Failures retry with backoff without rolling back approval. Successful delivery
-records `sent_at` and transitions APPROVED to SENT; a later payment status is
-never overwritten.
+After commit, an outbox publisher claims the event using `FOR UPDATE SKIP
+LOCKED`, publishes it to Standard SQS, and records the broker message ID. A
+separate consumer calls the delivery stub with the outbox event ID as an
+idempotency key. SQS redrives three failed receives to its DLQ without rolling
+back approval. Successful delivery records `sent_at` and transitions APPROVED
+to SENT; a later payment status is never overwritten.
 
 ### Error Cases
 
@@ -499,6 +501,57 @@ POST /api/v1/invoices/bulk-approve
 → 202 Accepted + job_id
 → client polls GET /jobs/{job_id}
 ```
+
+---
+
+## Delivery Operations
+
+These are operational APIs around FR3's automatic asynchronous delivery. They
+do not create invoices, GL entries, or a second delivery event.
+
+### GET /invoices/{id}/delivery
+
+Any authenticated user in the invoice's tenant and entity can inspect the
+durable event lifecycle. A sibling tenant/entity receives 404 so existence is
+not disclosed.
+
+```json
+{
+  "invoice_id": "uuid-1001",
+  "events": [{
+    "id": "uuid-event-1",
+    "event_type": "INVOICE_APPROVED",
+    "status": "DELIVERED",
+    "publish_attempt_count": 1,
+    "delivery_attempt_count": 1,
+    "sqs_message_id": "broker-message-id",
+    "last_error": null,
+    "created_at": "2026-07-20T10:00:00",
+    "published_at": "2026-07-20T10:00:01",
+    "delivered_at": "2026-07-20T10:00:02"
+  }]
+}
+```
+
+### POST /delivery-events/{id}/retry
+
+Required role: `cfo`. A DEAD event is reset to PENDING and the publisher owns
+the next SQS publication. Repeated calls while the event is already active
+return the current state with HTTP 202 and create no new row. A DELIVERED event
+returns HTTP 409 `DELIVERY_ALREADY_COMPLETED`; an inaccessible event returns
+404.
+
+```json
+{
+  "id": "uuid-event-1",
+  "invoice_id": "uuid-1001",
+  "status": "PENDING",
+  "message": "Delivery event queued for asynchronous retry"
+}
+```
+
+The CFO retry changes only delivery state. The already-committed invoice
+approval and journal remain financial truth throughout an adapter outage.
 
 ---
 

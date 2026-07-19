@@ -26,7 +26,7 @@ labels them required prototype endpoints/functionality.
 |---|---|---|---|---|---|
 | WP1 | `POST /invoices` with line items | Complete | Implemented and integration-tested | `COMPLETE` | `src/routers/invoices.py`, `test_api.sh` |
 | WP2 | `GET /invoices/{id}` with balance and payment history | Complete | Implemented and integration-tested | `COMPLETE` | Includes line items, payment history, credit-memo history, status history and ETag |
-| WP3 | `POST /invoices/{id}/approve` plus GL entries | Complete | Implemented and integration/concurrency-tested | `COMPLETE` | Atomic approval, GL, idempotency and delivery-outbox write |
+| WP3 | `POST /invoices/{id}/approve` plus GL entries | Complete | Implemented and integration/concurrency-tested | `COMPLETE` | Atomic approval, GL, idempotency and delivery-outbox write; SQS publication is after commit |
 | WP4 | `POST /payments` allocated to one or more invoices | Complete | AUTO FIFO and MANUAL allocation tested | `COMPLETE` | Partial payment, idempotent retry and overpayment liability are tested |
 | WP5 | `GET /customers/{id}/aging` with current/30/60/90+ | Complete | Implemented and tested | `COMPLETE` | PostgreSQL MV, pg_cron refresh and freshness timestamp |
 | WP6 | `GET /journal-entries?invoice={id}` | Complete | Implemented and pagination-tested | `COMPLETE` | Balanced entries and invoice-wide AR summary verified |
@@ -102,7 +102,7 @@ the interview story separates prototype correctness from production readiness.
 | NFR4 | Immutable audit and posted journals | Audit triggers exist; physical UPDATE/DELETE denial is not enforced | `V2` | Separate privileges/triggers plus retention and tamper monitoring |
 | NFR-B1 | Production JWT/TLS | Dual JWT verification works locally over HTTP | `V2` | TLS at Envoy, required issuer/audience, asymmetric keys and rotation |
 | NFR-B2 | Distributed per-tenant rate limiting | Envoy local per-instance bucket | `V2` | Shared rate-limit service with tenant descriptors and tests |
-| NFR-B3 | Outbox operations | Retry/DEAD state implemented | `V2` | DEAD alerting/replay, retention, metrics and downstream deduplication proof |
+| NFR-B3 | Outbox operations | Standard SQS/DLQ, status API, CFO replay and downstream deduplication implemented | `PARTIAL` | Focused happy/failure tests exist; production still needs DLQ alarms, retention, metrics and bulk redrive |
 | NFR-B1 | Managed backup/restore proof | Strategy documented | `V2` | PITR configuration, measured RPO/RTO and successful restore drill |
 | NFR-B2 | Zero-downtime production delivery | Safe Compose deployment exists | `V2` | Versioned migration runner, readiness/draining and rolling/blue-green test |
 | NFR-B3 | Reporting scale | Aging MV and journal pagination implemented | `V2` | Representative load test, query plan evidence and replica/reporting decision |

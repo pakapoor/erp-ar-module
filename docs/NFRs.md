@@ -512,6 +512,20 @@ live provider changes without making the main suite flaky. Monitoring covers
 provider-date freshness, import lag, retries and DEAD jobs. See
 [FX Rate Ingestion and Multi-Currency Design](fx-rate-design.md).
 
+### Delivery Queue Scaling and Failure Isolation
+
+Invoice approval writes one durable event in its PostgreSQL transaction; it
+never waits for SQS or the delivery adapter. Publishers claim independent rows
+with `FOR UPDATE SKIP LOCKED`, while Standard SQS buffers bursts and lets
+delivery consumers scale separately. Consumers delete only after the adapter
+success and DB status commit. Because Standard SQS is at-least-once, both the
+DB event claim and the adapter deduplicate using the stable outbox event ID.
+
+Three failed receives redrive to a DLQ. The CFO retry API resets only a DEAD
+event to PENDING, after which the publisher performs the broker call. Production
+adds DLQ-depth/oldest-age alarms, retention/archival, bounded bulk redrive and
+autoscaling on queue age—not on financial API latency.
+
 ---
 
 ## NFR7 — Durability

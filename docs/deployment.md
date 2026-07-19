@@ -25,7 +25,7 @@ PostgreSQL is deliberately **not** installed on the host. The custom
 it as the `erp_db` service. A second host installation could conflict on port
 5432 and would not contain the project's initialized schema.
 
-Ports 5432, 8000, and 9000 must be available. Port 8000 belongs to Envoy; the
+Ports 4566, 5432, 8000, and 9000 must be available. Port 8000 belongs to Envoy; the
 FastAPI application listens on port 8080 only inside the Compose network.
 
 ## Deploy
@@ -35,14 +35,16 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
-Expected final output begins with `Deployment successful` and lists six
+Expected final output begins with `Deployment successful` and lists eight
 running containers:
 
 - `erp_db` — healthy
 - `erp_gateway` — Envoy, publicly exposed on port 8000
 - `erp_app` — FastAPI, internal port 8080 with no host mapping
 - `erp_stub` — running on port 9000
-- `erp_delivery_worker` — running
+- `erp_localstack` — healthy; local SQS/DLQ on port 4566
+- `erp_outbox_publisher` — running; PostgreSQL outbox → SQS
+- `erp_delivery_worker` — running; SQS → delivery adapter
 - `erp_fx_rate_worker` — running; imports official ECB reference rates
 
 The script prints these endpoints:
@@ -51,6 +53,8 @@ The script prints these endpoints:
 L7 Gateway:    http://localhost:8000
 API docs:      http://localhost:8000/docs
 Delivery stub: http://localhost:9000
+Local SQS:     http://localhost:4566
+Live delivery: docker compose logs -f outbox_publisher delivery_worker stub
 Live FX feed:  docker compose logs -f fx_rate_worker
 ```
 
@@ -72,21 +76,24 @@ Run `./deploy.sh --help` for the same option summary.
 1. Install missing host dependencies, start Docker, and verify Compose.
 2. Build the images and validate the Envoy configuration before changing the
    running stack.
-3. Start the containerized PostgreSQL plus delivery/JWKS stub.
+3. Start PostgreSQL, LocalStack SQS/DLQ, and the delivery/JWKS stub.
 4. Wait for PostgreSQL readiness.
 5. Apply migration 002 only if aging-count columns are missing.
 6. Idempotently enable pg_cron and ensure one aging refresh plus one weekday FX
    import-enqueue schedule.
 7. Apply migration 004 only if `delivery_outbox` is missing.
-8. Apply migration 005 when idempotency keys are not yet entity-scoped.
-9. Apply migration 006 when `fx_import_job` and FX provenance/snapshot fields
+8. Apply migration 009 when SQS publication fields are absent.
+9. Apply migration 005 when idempotency keys are not yet entity-scoped.
+10. Apply migration 006 when `fx_import_job` and FX provenance/snapshot fields
    are missing.
-10. Concurrently refresh the aging MV so deployment health is deterministic.
-11. Start the internal AR application, outbox/FX workers, and Envoy gateway.
-12. Require health through Envoy and from the stub, verify both workers, and prove
+11. Apply base-currency migrations 007/008 when their objects are absent.
+12. Concurrently refresh the aging MV so deployment health is deterministic.
+13. Start the application, outbox publisher, SQS/FX workers, and Envoy gateway.
+14. Require health through Envoy and from the stub, verify LocalStack and all
+    workers, and prove
     that FastAPI port 8080 is not published to the host.
-13. Optionally seed data and/or run the API, payment-concurrency, and
-    credit-memo suites.
+15. Optionally seed data and/or run the API, payment-concurrency, credit-memo,
+    and SQS/DLQ suites.
 
 If a command fails, the script exits nonzero and prints container state plus the
 last 60 log lines from all services.
@@ -102,12 +109,15 @@ The following paths were executed locally against the Docker Compose stack:
 ./deploy.sh
 ```
 
-All exited with status 0. The test paths completed all API, outbox, accounting,
+The commands above are the regression target. The SQS extension additionally
+runs `test_delivery_sqs.sh`, covering outbox publication, duplicate delivery,
+DLQ redrive, financial independence and CFO retry. Do not claim a successful
+local run until all four scripts exit zero. Earlier pre-SQS runs completed API, accounting,
 entity isolation, overpayment, optimistic-concurrency, health, idempotency,
 gateway JWT, network-isolation, and trace-propagation assertions. The full
 build correctly reported migrations 002, 004, 005, and 006 as
 already present, reused both pg_cron jobs, refreshed the MV concurrently,
-and returned all six services in a running/healthy state. Repeated executions
+and returned all pre-SQS services in a running/healthy state. Repeated executions
 did not duplicate walkthrough financial records or the cron schedule; each
 concurrency race uses a fresh invoice and settles it before exit.
 
@@ -140,6 +150,8 @@ Additional response fields such as timestamps and MV age vary per run.
 - pg_cron setup is rerunnable and does not create duplicate jobs.
 - Migration 004 is executed only when the outbox table is absent because its
   policy creation is intentionally one-time DDL.
+- Migration 009 is rerunnable and extends the existing outbox without deleting
+  or rewriting financial records.
 - The aging MV uses a concurrent refresh, so readers retain the previous
   complete snapshot during deployment.
 

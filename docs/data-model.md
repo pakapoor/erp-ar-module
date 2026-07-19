@@ -37,7 +37,7 @@
 | Credit Memo | Correction document against an invoice |
 | AR Aging (materialized view) | Current derived snapshot by tenant, entity, and customer; refreshed every 5 minutes |
 | Idempotency Key | Tenant- and endpoint-scoped write claim with request hash and cached response |
-| Delivery Outbox | Durable invoice-delivery event committed atomically with approval and claimed by workers |
+| Delivery Outbox | Durable invoice-delivery event and DB→SQS publication lifecycle |
 | FX Import Job | Durable pg_cron request claimed by the FX worker; retry and provenance boundary |
 
 ---
@@ -58,7 +58,9 @@
 
 Full schema begins in [migrations/001_initial_schema.sql](../migrations/001_initial_schema.sql);
 the delivery outbox is added by
-[migrations/004_delivery_outbox.sql](../migrations/004_delivery_outbox.sql), and
+[migrations/004_delivery_outbox.sql](../migrations/004_delivery_outbox.sql) and
+extended with SQS publication metadata by
+[migration 009](../migrations/009_sqs_delivery_pipeline.sql), while
 the FX import/provenance foundation by
 [migrations/006_fx_rate_ingestion.sql](../migrations/006_fx_rate_ingestion.sql),
 base-currency aging by migration 007, and base-only realized-FX journal lines
@@ -82,8 +84,12 @@ Key design decisions in the schema:
   preserving the original document date
 - Idempotency keys table prevents duplicate writes and safely replays completed
   responses; payment references provide a second database uniqueness guard
-- Delivery outbox provides atomic approval/event persistence, multi-worker safe
-  claims, retry state, and a stable downstream idempotency identifier
+- Delivery outbox provides atomic approval/event persistence, multi-publisher
+  safe claims, broker message metadata, separate publication/delivery attempt
+  counters, DEAD recovery state, and a stable downstream idempotency identifier
+- The lifecycle is PENDING → PROCESSING → PUBLISHED → DELIVERING → DELIVERED;
+  publication or delivery exhaustion produces DEAD. Standard SQS/DLQ remains
+  transport state, while PostgreSQL remains the operational source of truth.
 - AR Aging as a current-only materialized view — refreshed every 5 minutes;
   historical reporting requires event reconstruction or persisted snapshots
 - Foreign-currency documents snapshot both the approved rate ID and numeric

@@ -12,6 +12,7 @@ Built as part of a Principal Engineer technical assessment for DeepRunner.ai.
 - **L7 API Gateway:** Envoy
 - **Backend:** Python / FastAPI
 - **Database:** PostgreSQL (with Row Level Security)
+- **Async messaging:** LocalStack SQS with a dead-letter queue
 - **Containerization:** Docker / Docker Compose
 - **AI Tools Used:** Claude (domain learning and design), GitHub Copilot (code assistance), Codex (implementation review, debugging, and integration verification)
 
@@ -44,7 +45,7 @@ For interview/review, follow this order:
 - Idempotent write APIs with cached retry responses
 - Database-triggered audit trail with actor context
 - Application and database period-posting controls
-- Transactional invoice-delivery outbox with retrying Docker worker
+- Transactional invoice-delivery outbox → Standard SQS/DLQ → idempotent consumer
 - pg_cron-scheduled ECB rate ingestion with durable jobs, provenance and seven
   approved foreign→INR pairs
 - Foreign-currency invoice/payment posting with locked rates and realized FX
@@ -70,6 +71,8 @@ acceptance tests are documented in
 | GET | /customers/{id}/aging | AR aging report |
 | GET | /journal-entries | GL entries for invoice |
 | GET | /health | Operational health and AR/GL reconciliation |
+| GET | /invoices/{id}/delivery | Inspect asynchronous delivery events |
+| POST | /delivery-events/{id}/retry | CFO retry of a DEAD delivery event |
 | POST | /invoices/{id}/credit-memos | Verified credit, AR reduction, and customer liability |
 | POST | /invoices/{id}/writeoff | Experimental CFO bad-debt write-off |
 | POST | /invoices/{id}/void | Experimental draft void or posted reversal |
@@ -94,6 +97,11 @@ partially-paid liability handling, USD/INR accounting, API6 visibility,
 balanced journals, and final AR-to-GL reconciliation. Basic draft-void and
 write-off paths remain in `test_api.sh`; their extended matrices are pending.
 
+`test_delivery_sqs.sh` proves the full approval → transactional outbox → SQS →
+delivery path, tenant/entity isolation, downstream deduplication, three-attempt
+DLQ redrive, preservation of committed financial records during a delivery
+outage, and CFO recovery of a DEAD event.
+
 Detailed commands, database inspection queries, expected output, pg_cron
 verification, and an optional delivery-retry drill are in
 [Verification and Expected Results](docs/testing.md).
@@ -117,11 +125,12 @@ The time was primarily invested in:
 erp-ar-module/
 ├── README.md                    Interview entry point and project guide
 ├── Dockerfile                   FastAPI and worker runtime image
-├── docker-compose.yml           Local six-service deployment
+├── docker-compose.yml           Local eight-service deployment
 ├── deploy.sh                    Safe build, migration, startup and verification
 ├── test_api.sh                  Repeatable API/control integration suite
 ├── test_payment_concurrency.sh  AUTO/MANUAL payment race controls
 ├── test_credit_memo.sh          B6 accounting and concurrency controls
+├── test_delivery_sqs.sh         SQS, DLQ, deduplication and retry controls
 ├── gateway/
 │   └── envoy.yaml               Public L7 gateway, JWT, tracing and rate limits
 ├── database/
@@ -129,6 +138,8 @@ erp-ar-module/
 ├── delivery_stub/
 │   ├── Dockerfile
 │   └── stub.py                  JWKS and invoice-delivery mock
+├── localstack/
+│   └── init-sqs.sh              Main delivery queue and DLQ bootstrap
 ├── migrations/
 │   ├── 001_initial_schema.sql
 │   ├── 002_add_ar_aging_bucket_counts.sql
@@ -137,14 +148,16 @@ erp-ar-module/
 │   ├── 005_entity_scoped_idempotency.sql
 │   ├── 006_fx_rate_ingestion.sql
 │   ├── 007_base_currency_ar_aging.sql
-│   └── 008_base_only_fx_journal_lines.sql
+│   ├── 008_base_only_fx_journal_lines.sql
+│   └── 009_sqs_delivery_pipeline.sql
 ├── src/
 │   ├── main.py                  FastAPI composition and trace middleware
 │   ├── auth.py                  JWT/JWKS validation and RBAC
 │   ├── database.py              Async SQLAlchemy session setup
 │   ├── schemas.py               API request/response contracts
 │   ├── seed_data.py             Deterministic demo master data
-│   ├── delivery_worker.py       Transactional-outbox delivery consumer
+│   ├── delivery_publisher.py    DB outbox → SQS relay
+│   ├── delivery_worker.py       SQS → idempotent delivery consumer
 │   ├── fx_rate_worker.py        Scheduled ECB import and INR-rate derivation
 │   ├── tests/
 │   │   ├── test_fx_rate_worker.py  Deterministic ECB parser/derivation tests
@@ -158,6 +171,7 @@ erp-ar-module/
 │       ├── credit_memos.py      Experimental credit, write-off and void commands
 │       ├── aging.py             Customer aging report
 │       ├── journal_entries.py   Invoice journal retrieval and pagination
+│       ├── delivery.py          Delivery status and CFO retry operations
 │       └── health.py            Database, MV and AR/GL reconciliation health
 └── docs/
     ├── requirements-traceability.md  Living assessment coverage matrix
