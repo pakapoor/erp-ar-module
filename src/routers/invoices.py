@@ -22,7 +22,7 @@ from src.schemas import (
     InvoiceApproveResponse, LineItemResponse,
     PaymentHistoryItem, CreditMemoHistoryItem, StatusHistoryItem
 )
-from src.main import (
+from src.exceptions import (
     BusinessRuleException, PeriodClosedException,
     IdempotencyConflictException, VersionConflictException
 )

@@ -7,6 +7,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from src.database import engine, Base
+from src.exceptions import (
+    BusinessRuleException,
+    IdempotencyConflictException,
+    PeriodClosedException,
+    VersionConflictException,
+)
 from src.routers import invoices, payments, aging, journal_entries, health
 
 logging.basicConfig(level=logging.INFO)
@@ -61,31 +67,6 @@ async def trace_id_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Trace-ID"] = trace_id
     return response
-
-
-# ============================================================
-# Exception handlers
-# ============================================================
-class PeriodClosedException(Exception):
-    def __init__(self, message: str):
-        self.message = message
-
-
-class IdempotencyConflictException(Exception):
-    def __init__(self, message: str, status: str):
-        self.message = message
-        self.status = status
-
-
-class BusinessRuleException(Exception):
-    def __init__(self, code: str, message: str):
-        self.code = code
-        self.message = message
-
-
-class VersionConflictException(Exception):
-    def __init__(self, message: str):
-        self.message = message
 
 
 @app.exception_handler(PeriodClosedException)

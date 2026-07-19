@@ -18,7 +18,7 @@ from src.models import (
     IdempotencyKey, Customer, ExchangeRate,
 )
 from src.schemas import PaymentCreate
-from src.main import (
+from src.exceptions import (
     BusinessRuleException,
     IdempotencyConflictException,
 )
