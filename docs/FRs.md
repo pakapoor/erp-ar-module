@@ -286,6 +286,10 @@ Net FX Gain: ₹3,000
 
 A credit memo is issued to correct an approved/sent/paid invoice. It cannot be raised against draft or void invoices. Credit memos have their own approval lifecycle. On approval, GL entries are automatically reversed.
 
+**Prototype status:** Bonus route implemented at
+`POST /invoices/{id}/credit-memos`; automated acceptance and hardening are
+pending, so traceability remains `IN PROGRESS`.
+
 **Reasons:**
 - OVERCHARGE → wrong price
 - RETURN → goods returned (partial or full)
@@ -330,6 +334,9 @@ States: Draft → Approved → Applied
 ## FR-B2 — Write-off
 
 A write-off is raised when a customer cannot pay (bankruptcy, absconding, bad debt). It removes the outstanding amount from AR and records it as Bad Debt Expense. Requires CFO approval due to revenue impact. Write-off applies only to outstanding balance — already paid amount is never reversed.
+
+**Prototype status:** CFO-only bonus route implemented at
+`POST /invoices/{id}/writeoff`; automated acceptance and hardening are pending.
 
 **Allowed against:** Sent ✅ Partially Paid ✅ Approved ✅
 
@@ -377,6 +384,10 @@ Invoice Status: Written Off
 ## FR-B3 — Invoice Void
 
 An invoice is voided when it should never have been raised or was raised in error. Void is different from write-off — write-off is customer cannot pay, void is invoice itself was wrong. Cannot void a paid or partially paid invoice — use credit memo instead.
+
+**Prototype status:** Bonus void route implemented at
+`POST /invoices/{id}/void`; DRAFT and posted-reversal acceptance tests are
+pending, and automatic reissue remains Phase 2.
 
 **Reasons:**
 - DUPLICATE → same invoice raised twice

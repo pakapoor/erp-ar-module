@@ -48,11 +48,14 @@ For interview/review, follow this order:
   approved foreign→INR pairs
 - Foreign-currency invoice/payment posting with locked rates and realized FX
   gain/loss in INR base-currency books
+- Serializable AUTO/MANUAL payment allocation with repeatable race controls
+- Experimental credit-memo, write-off, and void routes with atomic GL entries;
+  their bonus acceptance tests and hardening are still pending
 
 Designed but deferred from the required prototype: production email/EDI/IRP
-delivery adapters, credit memos, write-offs, void/reissue, intercompany
-elimination, manual journals, period-management APIs, cross-currency settlement
-and unrealized period-end FX revaluation. The completed V1 FX scope and its
+delivery adapters, void-and-reissue orchestration, intercompany elimination,
+manual journals, period-management APIs, cross-currency settlement and
+unrealized period-end FX revaluation. The completed V1 FX scope and its
 acceptance tests are documented in
 [FX Rate and Multi-Currency Design](docs/fx-rate-design.md).
 
@@ -66,6 +69,9 @@ acceptance tests are documented in
 | GET | /customers/{id}/aging | AR aging report |
 | GET | /journal-entries | GL entries for invoice |
 | GET | /health | Operational health and AR/GL reconciliation |
+| POST | /invoices/{id}/credit-memos | Experimental credit and AR reversal |
+| POST | /invoices/{id}/writeoff | Experimental CFO bad-debt write-off |
+| POST | /invoices/{id}/void | Experimental draft void or posted reversal |
 
 ## Verification
 
@@ -76,6 +82,13 @@ transactional-outbox delivery, cross-tenant denial, RBAC denial, and
 idempotency-payload conflict handling. It also verifies gateway JWT rejection,
 trace propagation, application network isolation, and independent FastAPI JWT
 validation.
+
+`test_payment_concurrency.sh` independently races two distinct full receipts
+through both AUTO and MANUAL allocation. Exactly one transaction commits and
+the loser receives retryable HTTP 409 without leaving partial financial data.
+Basic happy-path checks alone do not complete the three experimental
+lifecycle-correction routes; their dedicated financial-control matrix is still
+required before they can be claimed complete.
 
 Detailed commands, database inspection queries, expected output, pg_cron
 verification, and an optional delivery-retry drill are in
@@ -137,6 +150,7 @@ erp-ar-module/
 │   └── routers/
 │       ├── invoices.py          Create, retrieve and approve invoices
 │       ├── payments.py          Record and allocate receipts
+│       ├── credit_memos.py      Experimental credit, write-off and void commands
 │       ├── aging.py             Customer aging report
 │       ├── journal_entries.py   Invoice journal retrieval and pagination
 │       └── health.py            Database, MV and AR/GL reconciliation health

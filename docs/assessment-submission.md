@@ -6,13 +6,13 @@ This prototype implements the six APIs required by the assessment and demonstrat
 
 The architecture is a modular monolith implemented with FastAPI and PostgreSQL behind an Envoy L7 gateway. This keeps invoice, payment, allocation, audit, GL, and delivery-outbox writes within ACID transaction boundaries. Envoy rejects invalid JWTs early, injects trace IDs, and is the only public AR entry point; the internal FastAPI application independently re-validates JWTs. The application runs with a delivery/JWKS stub plus an outbox worker under Docker Compose.
 
-Production delivery adapters (Email/EDI/IRP), credit memos, void/reissue,
-write-off, intercompany elimination, manual journals, and period-management APIs
-are designed but not represented as completed prototype features. Full FX
-processing has an approved detailed design and is `IN PROGRESS`; its migration,
-pg_cron schedule and live ECB worker are implemented, but it must not be claimed
-complete until the invoice/payment accounting path and end-to-end tests pass.
-The durable delivery outbox, retrying worker, and console stub are implemented.
+Production delivery adapters (Email/EDI/IRP), void-and-reissue orchestration,
+intercompany elimination, manual journals, period-management APIs and period-end
+FX revaluation remain deferred. Full V1 FX ingestion, invoice/payment posting,
+realized gain/loss and failure controls are implemented and tested. Bonus credit
+memo, write-off and void routes exist, but remain `IN PROGRESS` until their
+dedicated financial-control acceptance matrix passes. The durable delivery
+outbox, retrying worker, and console stub are implemented and tested.
 
 ## 2. Data Model and Architecture
 
@@ -38,7 +38,12 @@ Production hardening: run through a non-owner database role, enable `FORCE ROW L
 
 ### Currency model
 
-Invoices and payments store transaction currency, exchange rate, base currency, and base amounts. ExchangeRate stores dated rates. The required prototype exercises INR-to-INR at rate 1; full rate lookup, manual-review flags, and realized FX accounting are deferred bonus functionality.
+Invoices and payments store transaction currency, locked exchange-rate ID/rate,
+base currency, and base amounts. A scheduled worker derives approved foreign→INR
+rates from ECB data. The integration suite verifies USD invoice approval,
+partial/final settlement, realized gain/loss, stale-rate failure and rejection
+of unsupported cross-currency allocation. Period-end unrealized revaluation is
+deferred.
 
 ### Audit model
 
@@ -63,9 +68,17 @@ Cr 1200 Accounts Receivable  100,000
 
 The resulting invoice balance, aging total, and net GL AR are all INR 74,000. The health endpoint reports whether AR subledger and GL account 1200 match.
 
-Payments support AUTO FIFO and MANUAL allocation in code. The integration path verifies AUTO partial allocation, cached idempotent retry, and balanced overpayment accounting. Unapplied cash is credited to the 2100 Customer Credit liability account. Multi-currency allocation requires further production hardening before being claimed complete.
+Payments support AUTO FIFO and MANUAL allocation. The integration path verifies
+partial allocation, cached idempotent retry, balanced overpayment accounting,
+foreign-currency settlement and realized FX. Unapplied cash is credited to the
+2100 Customer Credit liability account. A separate race suite submits two
+different full receipts in each allocation mode and proves one commit, one
+retryable conflict and one financial posting.
 
-Credit memo and write-off accounting are documented in [Functional Requirements](FRs.md) and [Financial Controls](financial-controls.md), but their endpoints are outside the required prototype.
+Credit memo, write-off and void accounting are documented in
+[Functional Requirements](FRs.md) and [Financial Controls](financial-controls.md).
+Their bonus routes are implemented, but a basic happy path is insufficient;
+they are not represented as complete until the dedicated control matrix passes.
 
 ## 4. State and Business Rules
 
@@ -80,6 +93,10 @@ APPROVED/SENT/PARTIALLY_PAID --partial payment--> PARTIALLY_PAID
 APPROVED/SENT/PARTIALLY_PAID --full payment--> PAID
 ```
 
+Bonus code also contains credit-memo balance reduction, CFO write-off to
+WRITTEN_OFF, and DRAFT/APPROVED/SENT void paths. These remain test-pending and
+do not widen the verified core lifecycle claim above.
+
 Approval requires a separate approver, an OPEN document-date period, an idempotency key, and the current invoice version through `If-Match`. Approval and payment create their GL entries atomically. Approval also writes a delivery outbox event in the same transaction; the worker later records SENT without making notification success a prerequisite for the receivable.
 
 ## 5. API Design and Verification
@@ -92,6 +109,10 @@ Approval requires a separate approver, an OPEN document-date period, an idempote
 | Record payment | `POST /api/v1/payments` | Allocation/balance and retry asserted |
 | Customer aging | `GET /api/v1/customers/{id}/aging` | INR 74,000 current bucket asserted |
 | Invoice journals | `GET /api/v1/journal-entries?invoice={id}` | Two balanced entries and net AR asserted |
+
+Bonus routes present but awaiting dedicated acceptance: credit memo, write-off,
+and void. They are tracked as `IN PROGRESS`, not folded into the required API
+table's completion claim.
 
 Operational extension: `GET /health` checks database access, materialized-view age, and AR-to-GL reconciliation.
 
@@ -109,8 +130,8 @@ The script seeds deterministic data, generates fresh development JWTs, derives t
 
 Control assertions also verify tenant/entity isolation, entity-scoped cached
 responses, creator/approver separation, overpayment liability accounting,
-changed-payload idempotency rejection, stale versions, and a real simultaneous
-approval race.
+changed-payload idempotency rejection, stale versions, a simultaneous approval
+race, and simultaneous AUTO/MANUAL payment-allocation races.
 
 ### Idempotency
 
@@ -148,17 +169,17 @@ AI tools used:
 The project was expanded beyond the original 3–4 hour timebox as an interactive learning and interview-walkthrough artifact. The candidate should add truthful approximate time spent on design, prototype, controls, and experience sections in the README before submission.
 
 
-## 10. Accounting Standards and Assumptions
+## 9. Accounting Standards and Assumptions
 
 ### GAAP vs IFRS Position
 
 This prototype is designed to be standards-neutral at the data model level — the schema stores both transaction currency and base currency amounts, captures document date separately from posting date, and supports the period-close and prior-period correction workflows required under both GAAP and IFRS. The following explicit assumptions apply:
 
-**Revenue recognition:** The prototype assumes point-in-time revenue recognition under ASC 606 (GAAP) / IFRS 15 — revenue is recognised when the invoice is approved, meaning the performance obligation (goods or services delivered) is treated as satisfied at that moment. Deferred revenue for multi-period or subscription arrangements requires a separate deferred revenue GL account and recognition schedule, which is designed but not implemented in this prototype (see Section 11 below).
+**Revenue recognition:** The prototype assumes point-in-time revenue recognition under ASC 606 (GAAP) / IFRS 15 — revenue is recognised when the invoice is approved, meaning the performance obligation (goods or services delivered) is treated as satisfied at that moment. Deferred revenue for multi-period or subscription arrangements requires a separate deferred revenue GL account and recognition schedule, which is designed but not implemented in this prototype (see Section 10 below).
 
 **Receivables:** AR is recorded at invoice total (net of tax under IFRS, gross under US GAAP where tax is a liability). This prototype uses the IFRS-aligned approach — revenue is credited at the subtotal amount and tax payable is a separate liability credit — which also aligns with GST/VAT treatment in Indian mid-market ERP (the scenario currency is INR).
 
-**Foreign currency:** Monetary items (AR, cash) are retranslated at the closing rate under IAS 21 / ASC 830. The prototype captures the exchange rate at transaction date and is designed to support realised FX gain/loss on settlement. Full retranslation at period-end closing rates is a production requirement documented in fx-rate-design.md but not implemented in the prototype.
+**Foreign currency:** Monetary items (AR, cash) are retranslated at the closing rate under IAS 21 / ASC 830. The prototype locks invoice- and payment-date rates and posts realised FX gain/loss on settlement. Full retranslation at period-end closing rates is a production requirement documented in fx-rate-design.md but not implemented in the prototype.
 
 **Period close:** The OPEN/CLOSED/LOCKED period model aligns with both GAAP and IFRS requirements. No entries post to a closed period; prior-period adjustments in a locked period use a current-period adjustment entry preserving the original document date — consistent with IAS 8 / ASC 250 requirements for correction of errors.
 
@@ -166,7 +187,7 @@ This prototype is designed to be standards-neutral at the data model level — t
 
 ---
 
-## 11. Revenue Recognition Design
+## 10. Revenue Recognition — Preliminary Outline
 
 ### Current Implementation
 
@@ -179,7 +200,7 @@ Cr  Sales Revenue        150,000   (subtotal — performance obligation satisfie
 Cr  Tax Payable           24,000   (government liability, not revenue)
 ```
 
-### Deferred Revenue (Phase 2 Design)
+### Deferred Revenue (initial Phase 2 candidate)
 
 For subscription, retainer, or multi-period service contracts, revenue must be deferred and recognised over the service period. The production design is:
 
@@ -199,13 +220,24 @@ Cr  Sales Revenue        1,000   (earned this period)
 
 4. The AR aging and balance sheet must distinguish between billed AR (cash expected) and unearned revenue (service still owed) — these are separate concerns that the Tenant → Entity → Period model supports.
 
-This design is consistent with ASC 606 five-step model and IFRS 15, and the schema is extensible to support it without structural changes. Implementation is deferred to Phase 2 as it is not required by the prototype assessment scope.
+This direction is consistent with the basic ASC 606/IFRS 15 deferral pattern,
+but it is not yet an approved design. B3 must still decide the performance-
+obligation model, allocation, schedule storage, modifications/cancellations,
+period-close behavior and catch-up entries. It requires schema additions rather
+than relying on the current invoice tables unchanged. Implementation remains a
+separate V1-versus-V2 decision after that review.
 
-## 9. Known Limits
+## 11. Known Limits
 
-- The integration suite verifies the required happy path, entity/tenant isolation, overpayment accounting, stale versions, and simultaneous invoice approval. Payment and worker concurrency are protected in code but do not yet have a comprehensive load/race matrix.
+- The integration suite verifies the required path, FX accounting, entity/tenant
+  isolation, overpayment, stale versions, simultaneous approval, and real AUTO
+  and MANUAL full-payment races. This is a deterministic two-request control,
+  not a representative production load test.
+- Credit memo, write-off and void routes require dedicated entity, currency,
+  concurrency, idempotency, balanced-journal and reconciliation tests before
+  they can be marked complete.
 - RLS needs a non-owner runtime role plus `FORCE ROW LEVEL SECURITY` for production-grade defense in depth.
 - Journal immutability and aggregate balancing need database privilege/constraint enforcement.
 - The custom PostgreSQL image loads pg_cron. One job owned by the `postgres` system database refreshes `erp_db.ar_aging` concurrently every five minutes; the integration test also refreshes explicitly for deterministic assertions.
-- Multi-currency implementation is in progress; intercompany, amendment, and
-  period-management workflows are deferred.
+- Intercompany, void/reissue orchestration, period-management workflows,
+  cross-currency settlement and unrealized FX revaluation are deferred.

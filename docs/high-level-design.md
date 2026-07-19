@@ -53,6 +53,7 @@ API flows shown in diagram:
 - ⑤ GET /customers/{id}/aging — AR aging report (FR5)
 - ⑥ GET /journal-entries — GL journal entries (FR6)
 - ⑦ GET /health — operational health check (NFR5)
+- Bonus lifecycle commands (not shown): credit memo, write-off and void
 
 ① ② ③ ④ ⑤ ⑥ = business APIs (FRs)
 ⑦ = operational API (NFR5)
@@ -162,6 +163,19 @@ derivation, posting examples, failure rules and test acceptance criteria.
 - Reconciles posted invoice base balances to base-currency AR GL per entity
 - Result: 200 healthy or 503 unhealthy
 
+### Bonus lifecycle corrections (FR-B1–FR-B3; verification pending)
+
+- `POST /invoices/{id}/credit-memos`: approver/CFO reverses Revenue and
+  optional Tax, credits AR, and applies the credit memo atomically.
+- `POST /invoices/{id}/writeoff`: CFO debits Bad Debt Expense and credits the
+  remaining AR balance atomically.
+- `POST /invoices/{id}/void`: approver/CFO voids a DRAFT without GL or reverses
+  Revenue, Tax and AR for an APPROVED/SENT invoice.
+- All three routes use PostgreSQL idempotency records and role/status guards.
+- They remain experimental until entity isolation, foreign-currency base
+  amounts, stale/concurrent mutation, cached retry, balanced journal and
+  AR-to-GL reconciliation acceptance tests pass.
+
 ---
 
 ## NFR Layer
@@ -169,6 +183,8 @@ derivation, posting examples, failure rules and test acceptance criteria.
 ### Consistency (NFR1)
 - System is CP (Consistency + Partition Tolerance)
 - Returns 503 rather than serve wrong financial data
+- Payment serialization/deadlock conflicts return retryable HTTP 409. AUTO and
+  MANUAL race tests prove one posting and complete rollback of the loser.
 - Exception: AR aging (5 min staleness acceptable)
 
 ### Security (NFR4)

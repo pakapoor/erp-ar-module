@@ -55,6 +55,11 @@ walkthrough responses without creating duplicate invoices, payments, or GL
 entries; it creates a fresh, settled invoice for each real concurrency race.
 `deploy.sh --test` runs both scripts.
 
+Scope boundary: the automated suite currently verifies the required APIs, FX,
+gateway/outbox controls and payment/approval races. The newly implemented bonus
+credit-memo, write-off and void routes still require a dedicated acceptance
+matrix before the traceability document can mark them complete.
+
 ### Assertions and expected results
 
 | Step | Expected result |

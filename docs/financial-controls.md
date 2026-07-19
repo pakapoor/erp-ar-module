@@ -72,7 +72,12 @@ An approved invoice must not be edited in place. Corrections should use:
 - Credit memo when price, quantity, returned goods, or tax must be corrected after issue.
 - Write-off for an uncollectible outstanding balance; already received cash is never reversed.
 
-Credit memo, void, and write-off schemas and accounting rules are designed but their APIs are Phase 2, not prototype claims.
+Credit memo, void, and write-off routes now exist as bonus prototype code and
+create their state/GL changes atomically. They are deliberately labelled
+experimental rather than complete: the current required-API suite does not yet
+prove entity isolation, foreign-currency base amounts, concurrent changes,
+idempotent retries, or post-command AR-to-GL reconciliation for these routes.
+Void-and-reissue orchestration remains Phase 2.
 
 ## 3. Audit and SOX Controls
 

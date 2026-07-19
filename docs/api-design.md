@@ -1066,15 +1066,24 @@ No auth required — used by infrastructure.
 
 ---
 
-## Future Enhancements
+## Bonus and Future APIs
+
+### Implemented bonus write APIs — acceptance pending
+
+| Route | Role | Atomic accounting effect | Current status |
+|---|---|---|---|
+| `POST /invoices/{id}/credit-memos` | `invoice_approver` or `cfo` | Dr Revenue/Tax, Cr AR | Implemented; bonus tests pending |
+| `POST /invoices/{id}/writeoff` | `cfo` | Dr Bad Debt Expense, Cr remaining AR | Implemented; bonus tests pending |
+| `POST /invoices/{id}/void` | `invoice_approver` or `cfo` | DRAFT: no GL; APPROVED/SENT: reverse Revenue/Tax/AR | Implemented; bonus tests pending |
+
+Each requires `X-Idempotency-Key`. These routes are not yet part of the verified
+prototype claim; acceptance still requires entity/currency/concurrency,
+idempotent-retry, journal-balance and reconciliation controls.
 
 ### Additional Write APIs (Phase 2)
 
 ```
 POST /invoices/{id}/send          ← FR3: send invoice to customer
-POST /invoices/{id}/void          ← FR-B3: void invoice
-POST /invoices/{id}/credit-memos  ← FR-B1: create credit memo
-POST /invoices/{id}/writeoff      ← FR-B2: write off invoice
 POST /journal-entries/manual      ← FR-B5: manual journal entry
 POST /periods/{id}/close          ← FR10: close accounting period
 POST /periods/{id}/reopen         ← FR10: CFO reopens CLOSED period with reason

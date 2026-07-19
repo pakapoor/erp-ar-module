@@ -31,7 +31,7 @@ labels them required prototype endpoints/functionality.
 | WP5 | `GET /customers/{id}/aging` with current/30/60/90+ | Complete | Implemented and tested | `COMPLETE` | PostgreSQL MV, pg_cron refresh and freshness timestamp |
 | WP6 | `GET /journal-entries?invoice={id}` | Complete | Implemented and pagination-tested | `COMPLETE` | Balanced entries and invoice-wide AR summary verified |
 | WP7 | Multi-tenant isolation | Complete | Tenant and entity denial tests pass | `COMPLETE` | JWT-derived scope plus application filters; production RLS hardening tracked under NFR3 |
-| WP8 | Validated invoice state transitions | Complete | Core create/approve/send/pay path tested | `COMPLETE` | Void/write-off are design requirements, not required prototype endpoints |
+| WP8 | Validated invoice state transitions | Complete | Core create/approve/send/pay path tested | `COMPLETE` | Bonus void/write-off routes exist but remain outside this required, tested claim |
 | WP9 | Automatic GL entry generation on approval | Complete | Balanced journal tested | `COMPLETE` | AR, Revenue and Tax Payable lines |
 | WP10 | FIFO or manual payment allocation | Complete | Both modes implemented; AUTO path tested in walkthrough | `COMPLETE` | MANUAL also exercised by overpayment control |
 | WP11 | Basic audit logging | Complete | DB triggers active during tested writes | `COMPLETE` | Actor and old/new row data captured; immutability hardening is NFR4 |
@@ -47,8 +47,8 @@ labels them required prototype endpoints/functionality.
 | DA5 | Invoice-to-GL accounting | Complete | Implemented/tested | `COMPLETE` | Approval journal balances |
 | DA6 | Payment recording and allocation | Complete | Implemented/tested | `COMPLETE` | Payment, allocation, invoice and journal commit atomically |
 | DA7 | Partial payments and overpayments | Complete | Implemented/tested | `COMPLETE` | Unapplied amount credits Customer Credit liability, not AR |
-| DA8 | Credit memo application and write-off procedures | Complete | No endpoints claimed | `DESIGN COMPLETE` | Accounting/state rules documented in `FRs.md` and `financial-controls.md` |
-| DA9 | Lifecycle states and transition rules | Complete | Core path implemented | `COMPLETE` | DRAFT, APPROVED, SENT, PARTIALLY_PAID, PAID plus designed VOID/WRITTEN_OFF |
+| DA8 | Credit memo application and write-off procedures | Complete | Bonus routes implemented; acceptance pending | `PARTIAL` | Add entity/currency/concurrency/idempotency/journal/reconciliation tests |
+| DA9 | Lifecycle states and transition rules | Complete | Core path tested; bonus terminal paths implemented | `COMPLETE` | DRAFT, APPROVED, SENT, PARTIALLY_PAID and PAID tested; VOID/WRITTEN_OFF verification tracked under B6–B8 |
 | DA10 | Operations allowed in each state | Complete | Core write guards implemented | `COMPLETE` | Approved invoices are not edited in place; amendment paths are documented |
 | DA11 | Key API request/response contracts | Complete | Six required APIs implemented | `COMPLETE` | `docs/api-design.md` |
 | DA12 | Payment idempotency approach | Complete | Implemented/tested | `COMPLETE` | Entity-scoped key, request hash, cached response and payment-reference uniqueness |
@@ -62,7 +62,7 @@ labels them required prototype endpoints/functionality.
 | FC2 | Duplicate-payment prevention | Complete | Multiple controls tested | `COMPLETE` | Idempotency, request hash and unique payment reference |
 | FC3 | Critical DB constraints and application validation | Complete | Core controls exercised | `COMPLETE` | Decimal server calculations, checks, uniqueness and period trigger |
 | FC4 | SOX audit requirements | Complete | Basic audit implemented | `DESIGN COMPLETE` | Immutable archival/privilege enforcement remains production NFR4 |
-| FC5 | Approved-invoice amendments | Complete | No amendment endpoints required | `DESIGN COMPLETE` | Void/reissue vs credit memo decision documented |
+| FC5 | Approved-invoice amendments | Complete | Bonus credit/void routes implemented; acceptance pending | `DESIGN COMPLETE` | Required decision is documented; implementation proof remains B6/B7 |
 | FC6 | Segregation of duties | Complete | Creator/approver denial tested | `COMPLETE` | Separate creator, approver/CFO and payment-recorder roles |
 | FC7 | Month/year-end close | Complete | Posting check implemented; management APIs deferred | `DESIGN COMPLETE` | OPEN/CLOSED/LOCKED rules and controls documented |
 | FC8 | Posting an invoice to a closed period | Complete | App plus DB enforcement implemented | `COMPLETE` | Returns locked-period error and creates no journal |
@@ -81,12 +81,12 @@ one instead of silently expanding scope.
 |---|---|---|---|---|
 | B1 | Full multi-currency and exchange-rate handling | ECB ingestion, dual-currency posting and realized gain/loss implemented/tested | `COMPLETE` | Gain, loss, partial/final payment, stale rate and mixed-currency controls pass |
 | B2 | Intercompany invoicing and elimination | Schema/design only | `V2` | Review after B1; do not claim implementation |
-| B3 | Revenue recognition schedules/deferred revenue | Neither sufficient design nor implementation yet | `PARTIAL` | Must at least complete the required design discussion; then decide implementation vs V2 |
+| B3 | Revenue recognition schedules/deferred revenue | Preliminary point-in-time/deferred outline exists; policy, data and lifecycle decisions are not validated | `PARTIAL` | Complete the design discussion, then decide implementation vs V2 |
 | B4 | Odoo module or SAP integration patterns | FastAPI solution chosen | `NOT PLANNED` | Optional bonus; unrelated rewrite would weaken the submission |
 | B5 | Automated AR subledger-to-GL reconciliation | Health reconciliation implemented/tested | `COMPLETE` | Already earns the bonus at prototype scale |
-| B6 | Credit memo workflow | Model and accounting design only | `V2` | Review after required/design gaps |
-| B7 | Void/reissue workflow | State/accounting design only | `V2` | Review after required/design gaps |
-| B8 | Write-off workflow | Model/state/accounting design only | `V2` | Review after required/design gaps |
+| B6 | Credit memo workflow | Route and GL posting implemented; full acceptance not yet proven | `IN PROGRESS` | Verify entity/FX/balance/concurrency/idempotency/reconciliation controls |
+| B7 | Void/reissue workflow | Void route implemented; reissue orchestration absent; full acceptance pending | `IN PROGRESS` | Verify DRAFT and posted reversal paths; keep reissue in V2 unless selected |
+| B8 | Write-off workflow | CFO route and GL posting implemented; full acceptance pending | `IN PROGRESS` | Verify partial-payment balance, entity/FX/concurrency/idempotency and reconciliation |
 | B9 | Period-management and manual-adjustment APIs | Schema/control design only | `V2` | Review after required/design gaps |
 
 ## E. NFR / Production-Hardening Backlog
@@ -124,6 +124,6 @@ Work through only one item at a time:
 
 1. `B3` — Revenue-recognition design, then implementation/V2 decision
 2. `B2` — Intercompany decision
-3. `B6`–`B9` — Amendment and period-management decisions
+3. `B6`–`B8` — Bonus endpoint verification/hardening; `B9` period-management decision
 4. `NFR2`–`NFR-B3` — Production-hardening decisions
 5. `SUB4`–`SUB6` — Candidate/final-submission completion
