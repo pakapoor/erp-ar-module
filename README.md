@@ -19,6 +19,7 @@ Built as part of a Principal Engineer technical assessment for DeepRunner.ai.
 For interview/review, follow this order:
 - [Functional Requirements](docs/FRs.md)
 - [Non Functional Requirements](docs/NFRs.md)
+- [Assessment Requirements Traceability](docs/requirements-traceability.md)
 - [High Level Design](docs/high-level-design.md)
 - [Data Model](docs/data-model.md)
 - [API Design](docs/api-design.md)
