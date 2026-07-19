@@ -10,8 +10,9 @@ Production delivery adapters (Email/EDI/IRP), void-and-reissue orchestration,
 intercompany elimination, manual journals, period-management APIs and period-end
 FX revaluation remain deferred. Full V1 FX ingestion, invoice/payment posting,
 realized gain/loss and failure controls are implemented and tested. Bonus credit
-memo, write-off and void routes exist, but remain `IN PROGRESS` until their
-dedicated financial-control acceptance matrix passes. The durable delivery
+memo, write-off and void routes have repeatable INR happy-path/reconciliation
+tests, but remain `IN PROGRESS` until their extended financial-control matrix
+passes. The durable delivery
 outbox, retrying worker, and console stub are implemented and tested.
 
 ## 2. Data Model and Architecture
@@ -77,8 +78,8 @@ retryable conflict and one financial posting.
 
 Credit memo, write-off and void accounting are documented in
 [Functional Requirements](FRs.md) and [Financial Controls](financial-controls.md).
-Their bonus routes are implemented, but a basic happy path is insufficient;
-they are not represented as complete until the dedicated control matrix passes.
+Their bonus routes have basic INR happy-path and reconciliation coverage, but
+are not represented as complete until the extended control matrix passes.
 
 ## 4. State and Business Rules
 
@@ -110,9 +111,9 @@ Approval requires a separate approver, an OPEN document-date period, an idempote
 | Customer aging | `GET /api/v1/customers/{id}/aging` | INR 74,000 current bucket asserted |
 | Invoice journals | `GET /api/v1/journal-entries?invoice={id}` | Two balanced entries and net AR asserted |
 
-Bonus routes present but awaiting dedicated acceptance: credit memo, write-off,
-and void. They are tracked as `IN PROGRESS`, not folded into the required API
-table's completion claim.
+Bonus credit-memo, DRAFT-void and write-off happy paths pass with final
+reconciliation. Extended controls remain `IN PROGRESS`, separate from the
+required API table's completion claim.
 
 Operational extension: `GET /health` checks database access, materialized-view age, and AR-to-GL reconciliation.
 

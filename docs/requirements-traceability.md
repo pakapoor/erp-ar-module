@@ -47,7 +47,7 @@ labels them required prototype endpoints/functionality.
 | DA5 | Invoice-to-GL accounting | Complete | Implemented/tested | `COMPLETE` | Approval journal balances |
 | DA6 | Payment recording and allocation | Complete | Implemented/tested | `COMPLETE` | Payment, allocation, invoice and journal commit atomically |
 | DA7 | Partial payments and overpayments | Complete | Implemented/tested | `COMPLETE` | Unapplied amount credits Customer Credit liability, not AR |
-| DA8 | Credit memo application and write-off procedures | Complete | Bonus routes implemented; acceptance pending | `PARTIAL` | Add entity/currency/concurrency/idempotency/journal/reconciliation tests |
+| DA8 | Credit memo application and write-off procedures | Complete | INR happy paths and reconciliation tested | `PARTIAL` | Add entity/currency/concurrency/idempotency/direct-journal tests |
 | DA9 | Lifecycle states and transition rules | Complete | Core path tested; bonus terminal paths implemented | `COMPLETE` | DRAFT, APPROVED, SENT, PARTIALLY_PAID and PAID tested; VOID/WRITTEN_OFF verification tracked under B6–B8 |
 | DA10 | Operations allowed in each state | Complete | Core write guards implemented | `COMPLETE` | Approved invoices are not edited in place; amendment paths are documented |
 | DA11 | Key API request/response contracts | Complete | Six required APIs implemented | `COMPLETE` | `docs/api-design.md` |
@@ -84,9 +84,9 @@ one instead of silently expanding scope.
 | B3 | Revenue recognition schedules/deferred revenue | Preliminary point-in-time/deferred outline exists; policy, data and lifecycle decisions are not validated | `PARTIAL` | Complete the design discussion, then decide implementation vs V2 |
 | B4 | Odoo module or SAP integration patterns | FastAPI solution chosen | `NOT PLANNED` | Optional bonus; unrelated rewrite would weaken the submission |
 | B5 | Automated AR subledger-to-GL reconciliation | Health reconciliation implemented/tested | `COMPLETE` | Already earns the bonus at prototype scale |
-| B6 | Credit memo workflow | Route and GL posting implemented; full acceptance not yet proven | `IN PROGRESS` | Verify entity/FX/balance/concurrency/idempotency/reconciliation controls |
-| B7 | Void/reissue workflow | Void route implemented; reissue orchestration absent; full acceptance pending | `IN PROGRESS` | Verify DRAFT and posted reversal paths; keep reissue in V2 unless selected |
-| B8 | Write-off workflow | CFO route and GL posting implemented; full acceptance pending | `IN PROGRESS` | Verify partial-payment balance, entity/FX/concurrency/idempotency and reconciliation |
+| B6 | Credit memo workflow | INR full-credit path and reconciliation pass | `IN PROGRESS` | Verify entity/FX/partial-or-paid balance/concurrency/idempotency/direct journal controls |
+| B7 | Void/reissue workflow | DRAFT void tested; reissue absent | `IN PROGRESS` | Verify posted reversal; keep reissue in V2 unless selected |
+| B8 | Write-off workflow | CFO INR write-off and reconciliation pass | `IN PROGRESS` | Verify partial-payment, entity/FX/concurrency/idempotency/direct journal controls |
 | B9 | Period-management and manual-adjustment APIs | Schema/control design only | `V2` | Review after required/design gaps |
 
 ## E. NFR / Production-Hardening Backlog

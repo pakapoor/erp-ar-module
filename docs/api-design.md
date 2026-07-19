@@ -1072,13 +1072,13 @@ No auth required — used by infrastructure.
 
 | Route | Role | Atomic accounting effect | Current status |
 |---|---|---|---|
-| `POST /invoices/{id}/credit-memos` | `invoice_approver` or `cfo` | Dr Revenue/Tax, Cr AR | Implemented; bonus tests pending |
-| `POST /invoices/{id}/writeoff` | `cfo` | Dr Bad Debt Expense, Cr remaining AR | Implemented; bonus tests pending |
-| `POST /invoices/{id}/void` | `invoice_approver` or `cfo` | DRAFT: no GL; APPROVED/SENT: reverse Revenue/Tax/AR | Implemented; bonus tests pending |
+| `POST /invoices/{id}/credit-memos` | `invoice_approver` or `cfo` | Dr Revenue/Tax, Cr AR | INR full-credit path tested |
+| `POST /invoices/{id}/writeoff` | `cfo` | Dr Bad Debt Expense, Cr remaining AR | INR write-off path tested |
+| `POST /invoices/{id}/void` | `invoice_approver` or `cfo` | DRAFT: no GL; APPROVED/SENT: reverse Revenue/Tax/AR | DRAFT path tested; posted reversal pending |
 
-Each requires `X-Idempotency-Key`. These routes are not yet part of the verified
-prototype claim; acceptance still requires entity/currency/concurrency,
-idempotent-retry, journal-balance and reconciliation controls.
+Each requires `X-Idempotency-Key`. Basic INR paths and post-command AR-to-GL
+reconciliation pass. Extended acceptance still requires entity/currency/
+concurrency, idempotent-retry and direct journal-balance controls.
 
 ### Additional Write APIs (Phase 2)
 

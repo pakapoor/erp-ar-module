@@ -74,9 +74,10 @@ An approved invoice must not be edited in place. Corrections should use:
 
 Credit memo, void, and write-off routes now exist as bonus prototype code and
 create their state/GL changes atomically. They are deliberately labelled
-experimental rather than complete: the current required-API suite does not yet
-prove entity isolation, foreign-currency base amounts, concurrent changes,
-idempotent retries, or post-command AR-to-GL reconciliation for these routes.
+experimental rather than production-hardened. Repeatable INR credit-memo,
+DRAFT-void and write-off happy paths now pass, including post-command AR-to-GL
+reconciliation. The suite does not yet prove entity isolation, foreign-currency
+behavior, concurrent changes, idempotent retries, or posted-void reversal.
 Void-and-reissue orchestration remains Phase 2.
 
 ## 3. Audit and SOX Controls

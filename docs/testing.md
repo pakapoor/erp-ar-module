@@ -55,10 +55,10 @@ walkthrough responses without creating duplicate invoices, payments, or GL
 entries; it creates a fresh, settled invoice for each real concurrency race.
 `deploy.sh --test` runs both scripts.
 
-Scope boundary: the automated suite currently verifies the required APIs, FX,
-gateway/outbox controls and payment/approval races. The newly implemented bonus
-credit-memo, write-off and void routes still require a dedicated acceptance
-matrix before the traceability document can mark them complete.
+The automated suite also verifies basic INR credit-memo, DRAFT-void and
+write-off paths plus final reconciliation. Those bonus routes still require an
+extended entity/FX/concurrency/idempotency/direct-journal acceptance matrix
+before traceability can mark them complete.
 
 ### Assertions and expected results
 
@@ -100,6 +100,10 @@ matrix before the traceability document can mark them complete.
 | NFR1 MANUAL payment race | Exactly one HTTP 201 and one retryable 409; one allocation/journal; SENT v3 advances once to PAID v4 |
 | NFR1 AUTO payment race | Same guarantee under FIFO allocation; isolated customer prevents unrelated invoices entering the race |
 | NFR1 reconciliation | Both freshly created control invoices finish at zero balance and health remains HTTP 200/MATCHED |
+| FR-B1 credit memo | Full INR credit reverses Revenue/Tax and clears its control invoice |
+| FR-B3 DRAFT void | Invoice becomes VOID without creating a GL reversal |
+| FR-B2 write-off | CFO clears outstanding INR AR against Bad Debt Expense 4100 |
+| FR-B reconciliation | Health remains HTTP 200/MATCHED after all three lifecycle corrections |
 
 The final line must be:
 

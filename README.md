@@ -49,8 +49,8 @@ For interview/review, follow this order:
 - Foreign-currency invoice/payment posting with locked rates and realized FX
   gain/loss in INR base-currency books
 - Serializable AUTO/MANUAL payment allocation with repeatable race controls
-- Experimental credit-memo, write-off, and void routes with atomic GL entries;
-  their bonus acceptance tests and hardening are still pending
+- Credit-memo, write-off, and void routes with atomic GL entries and repeatable
+  INR happy-path/reconciliation tests; extended hardening is still pending
 
 Designed but deferred from the required prototype: production email/EDI/IRP
 delivery adapters, void-and-reissue orchestration, intercompany elimination,
@@ -86,9 +86,10 @@ validation.
 `test_payment_concurrency.sh` independently races two distinct full receipts
 through both AUTO and MANUAL allocation. Exactly one transaction commits and
 the loser receives retryable HTTP 409 without leaving partial financial data.
-Basic happy-path checks alone do not complete the three experimental
-lifecycle-correction routes; their dedicated financial-control matrix is still
-required before they can be claimed complete.
+The suite now exercises basic INR credit-memo, draft-void and write-off paths
+and verifies final AR-to-GL reconciliation. Their extended entity, FX,
+concurrency and idempotency matrix is still required before the bonus workflows
+can be claimed production-hardened.
 
 Detailed commands, database inspection queries, expected output, pg_cron
 verification, and an optional delivery-retry drill are in

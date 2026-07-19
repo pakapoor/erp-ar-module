@@ -163,7 +163,7 @@ derivation, posting examples, failure rules and test acceptance criteria.
 - Reconciles posted invoice base balances to base-currency AR GL per entity
 - Result: 200 healthy or 503 unhealthy
 
-### Bonus lifecycle corrections (FR-B1–FR-B3; verification pending)
+### Bonus lifecycle corrections (FR-B1–FR-B3; basic verification passed)
 
 - `POST /invoices/{id}/credit-memos`: approver/CFO reverses Revenue and
   optional Tax, credits AR, and applies the credit memo atomically.
@@ -172,9 +172,10 @@ derivation, posting examples, failure rules and test acceptance criteria.
 - `POST /invoices/{id}/void`: approver/CFO voids a DRAFT without GL or reverses
   Revenue, Tax and AR for an APPROVED/SENT invoice.
 - All three routes use PostgreSQL idempotency records and role/status guards.
-- They remain experimental until entity isolation, foreign-currency base
-  amounts, stale/concurrent mutation, cached retry, balanced journal and
-  AR-to-GL reconciliation acceptance tests pass.
+- Repeatable INR full-credit, DRAFT-void and write-off paths preserve AR-to-GL
+  reconciliation. Entity isolation, foreign-currency behavior, stale/concurrent
+  mutation, cached retry, posted-void reversal and direct journal-balance tests
+  remain before production-hardening is claimed.
 
 ---
 
