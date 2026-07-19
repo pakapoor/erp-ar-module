@@ -837,6 +837,11 @@ created_by != approved_by → enforced in code and DB
 
 ## Future-FR1 — Intercompany Consolidation
 
+**Why deferred:** The assessment's core AR flow ends at the seller entity;
+buyer-side AP posting, matching and consolidation require a separate
+cross-entity accounting workflow. **Plan:** Yes — targeted for V2 using an
+audited consolidation ledger without rewriting statutory entity books.
+
 Multi-entity scoping is implemented under FR10. Intercompany buyer-side
 posting, matching, elimination and consolidated reporting are a future
 capability. Each entity must retain its own statutory books.
@@ -907,6 +912,11 @@ is_intercompany:   FALSE ✅
 
 ## Future-FR2 — Manual Journal Entry
 
+**Why deferred:** Manual posting can bypass source-document controls and needs
+a dedicated maker-checker workflow, approval limits and reversal handling;
+these were outside the prototype's required APIs. **Plan:** Yes — targeted for
+V2 after those controls and period-management APIs exist.
+
 System must support manual journal entries for corrections, prior period adjustments, and write-off corrections. Manual entries require CFO approval and mandatory description. Full audit trail captured. Cannot be posted to locked periods.
 
 ```
@@ -952,6 +962,11 @@ Posted:   System Feb 5 11:00
 
 ## Future-FR3 — Period Management APIs
 
+**Why deferred:** Posting into non-OPEN periods is already prevented, while
+closing, locking and reopening periods are administrative workflows requiring
+CFO authorization, mandatory reasons and stronger audit tests. **Plan:** Yes —
+targeted for V2; enforcement remains active in V1.
+
 The posting enforcement exists; administrative workflow endpoints are
 deliberately deferred:
 
@@ -970,6 +985,12 @@ GET  /periods               ← list periods and status
 ---
 
 ## Future-FR4 — User Management APIs
+
+**Why deferred:** V1 consumes signed JWT identities and seeded roles; secure
+user provisioning, credential lifecycle and role administration belong behind
+an enterprise identity provider rather than the AR service itself. **Plan:**
+Yes — V2 will integrate an IdP and expose only the required ERP role-mapping
+administration.
 
 Role administration is not part of the implemented prototype:
 
