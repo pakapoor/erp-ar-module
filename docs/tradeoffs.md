@@ -320,3 +320,30 @@ formulas, controls and tests are in
 [FX Rate Ingestion and Multi-Currency Design](fx-rate-design.md).
 
 ---
+
+## T16 — Revenue Recognition: Immediate vs Deferred
+
+**Q: Should invoice approval always recognize revenue immediately?**
+
+| | Immediate recognition | Deferred recognition schedule |
+|--|--|--|
+| Suitable for | Delivered goods and completed services | Subscriptions and multi-period services |
+| Approval posting | Credit Sales Revenue | Credit Deferred Revenue liability |
+| Later processing | None | Periodic earned-revenue journals |
+| Complexity | Low | Policy, schedule, modification and close controls |
+
+**Decision: V1 point-in-time scope; deferred recognition in V2**
+
+V1 assumes the performance obligation has been satisfied when an invoice is
+approved, so approval credits Sales Revenue. For an over-time obligation, V2
+will credit Deferred Revenue and persist a line-level recognition schedule that
+periodically debits Deferred Revenue and credits Sales Revenue.
+
+Implementation is deferred because correct treatment requires a
+Finance-approved performance-obligation and allocation policy plus handling for
+contract changes, cancellations, closed periods and cumulative catch-up
+entries. A simplistic monthly cron implementation could create plausible but
+incorrect books. The tradeoff is narrower V1 product scope in exchange for an
+honest and financially safe prototype.
+
+---

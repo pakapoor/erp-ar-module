@@ -81,7 +81,7 @@ one instead of silently expanding scope.
 |---|---|---|---|---|
 | B1 | Full multi-currency and exchange-rate handling | ECB ingestion, dual-currency posting and realized gain/loss implemented/tested | `COMPLETE` | Gain, loss, partial/final payment, stale rate and mixed-currency controls pass |
 | B2 | Intercompany invoicing and elimination | Schema/design only | `V2` | Review after B1; do not claim implementation |
-| B3 | Revenue recognition schedules/deferred revenue | Preliminary point-in-time/deferred outline exists; policy, data and lifecycle decisions are not validated | `PARTIAL` | Complete the design discussion, then decide implementation vs V2 |
+| B3 | Revenue recognition schedules/deferred revenue | Point-in-time scope and deferred-revenue approach documented | `V2` | Over-time lines credit Deferred Revenue and use persisted schedules; Finance policy approval precedes implementation |
 | B4 | Odoo module or SAP integration patterns | FastAPI solution chosen | `NOT PLANNED` | Optional bonus; unrelated rewrite would weaken the submission |
 | B5 | Automated AR subledger-to-GL reconciliation | Health reconciliation implemented/tested | `COMPLETE` | Already earns the bonus at prototype scale |
 | B6 | Credit memo workflow | INR full-credit path and reconciliation pass | `IN PROGRESS` | Verify entity/FX/partial-or-paid balance/concurrency/idempotency/direct journal controls |
@@ -116,14 +116,13 @@ the interview story separates prototype correctness from production readiness.
 | SUB3 | AI tools and how they assisted | `COMPLETE` | Final wording check only |
 | SUB4 | Approximate time per section | `USER INPUT` | Pankaj must provide truthful estimates |
 | SUB5 | Four enterprise-experience examples | `USER INPUT` | Complete `docs/experience-showcase.md` from Pankaj's real experience |
-| SUB6 | GAAP/IFRS assumptions | `PARTIAL` | Add a short explicit accounting-policy assumptions section |
+| SUB6 | GAAP/IFRS assumptions | `COMPLETE` | Point-in-time, deferred revenue, tax, FX and period-close assumptions are explicit |
 
 ## Decision Queue
 
 Work through only one item at a time:
 
-1. `B3` — Revenue-recognition design, then implementation/V2 decision
-2. `B2` — Intercompany decision
-3. `B6`–`B8` — Bonus endpoint verification/hardening; `B9` period-management decision
-4. `NFR2`–`NFR-B3` — Production-hardening decisions
-5. `SUB4`–`SUB6` — Candidate/final-submission completion
+1. `B2` — Intercompany decision
+2. `B6`–`B8` — Bonus endpoint verification/hardening; `B9` period-management decision
+3. `NFR2`–`NFR-B3` — Production-hardening decisions
+4. `SUB4`–`SUB5` — Candidate/final-submission completion

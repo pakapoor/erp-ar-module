@@ -188,7 +188,7 @@ This prototype is designed to be standards-neutral at the data model level — t
 
 ---
 
-## 10. Revenue Recognition — Preliminary Outline
+## 10. Revenue Recognition — V2 Decision
 
 ### Current Implementation
 
@@ -201,7 +201,7 @@ Cr  Sales Revenue        150,000   (subtotal — performance obligation satisfie
 Cr  Tax Payable           24,000   (government liability, not revenue)
 ```
 
-### Deferred Revenue (initial Phase 2 candidate)
+### Deferred Revenue (approved V2 direction)
 
 For subscription, retainer, or multi-period service contracts, revenue must be deferred and recognised over the service period. The production design is:
 
@@ -221,12 +221,16 @@ Cr  Sales Revenue        1,000   (earned this period)
 
 4. The AR aging and balance sheet must distinguish between billed AR (cash expected) and unearned revenue (service still owed) — these are separate concerns that the Tenant → Entity → Period model supports.
 
-This direction is consistent with the basic ASC 606/IFRS 15 deferral pattern,
-but it is not yet an approved design. B3 must still decide the performance-
-obligation model, allocation, schedule storage, modifications/cancellations,
-period-close behavior and catch-up entries. It requires schema additions rather
-than relying on the current invoice tables unchanged. Implementation remains a
-separate V1-versus-V2 decision after that review.
+This is a deliberate V2 decision, not an incomplete V1 claim. The required
+prototype remains scoped to invoices for goods or services whose performance
+obligation is satisfied by approval. A subscription or other over-time line
+will instead credit Deferred Revenue and use a persisted recognition schedule;
+it must not credit the full amount to Sales Revenue on approval.
+
+Before V2 implementation, Finance must approve the performance-obligation and
+allocation policy, schedule granularity, contract-modification/cancellation
+rules, period-close behavior and cumulative catch-up treatment. Deferring the
+code avoids presenting a simplistic monthly job as ASC 606/IFRS 15 compliance.
 
 ## 11. Known Limits
 
