@@ -10,7 +10,7 @@ RUN_SEED=false
 RUN_TESTS=false
 
 usage() {
-  0</dev/null cat <<'EOF'
+  cat <<'EOF'
 Usage: ./deploy.sh [options]
 
 Deploy the local Docker Compose prototype without deleting its database volume.
@@ -52,7 +52,7 @@ log() {
 }
 
 show_failure_context() {
-  exit_code=$?
+  local exit_code=$?
   set +e
   echo >&2
   echo "Deployment failed. Current service state:" >&2
@@ -72,7 +72,8 @@ require_command() {
 }
 
 wait_for_database() {
-  for attempt in $(seq 1 30); do
+  local attempt
+  for ((attempt = 1; attempt <= 30; attempt++)); do
     if docker compose exec -T db pg_isready -U erp_user -d erp_db >/dev/null 2>&1; then
       return 0
     fi
@@ -83,10 +84,11 @@ wait_for_database() {
 }
 
 wait_for_url() {
-  url=$1
-  service_name=$2
-  for attempt in $(seq 1 30); do
-    if curl --fail --silent --show-error --output /dev/null "$url"; then
+  local url=$1
+  local service_name=$2
+  local attempt
+  for ((attempt = 1; attempt <= 30; attempt++)); do
+    if curl --fail --silent --output /dev/null "$url"; then
       return 0
     fi
     sleep 2
@@ -97,16 +99,20 @@ wait_for_url() {
 
 require_command docker
 require_command curl
+if [ "$RUN_TESTS" = true ]; then
+  require_command python3
+fi
 
 log "Checking Docker and Compose"
 docker info >/dev/null
 docker compose version
 docker compose config --quiet
 
-up_options=(-d)
 if [ "$BUILD_IMAGES" = true ]; then
-  up_options+=(--build)
+  log "Building deployment images"
+  docker compose build
 fi
+up_options=(-d)
 
 log "Starting PostgreSQL and the delivery/JWKS stub"
 docker compose up "${up_options[@]}" db stub
@@ -116,10 +122,16 @@ log "Applying missing database migrations"
 has_aging_counts="$(
   docker compose exec -T db psql -U erp_user -d erp_db -Atc \
     "SELECT EXISTS (
-       SELECT 1 FROM information_schema.columns
-       WHERE table_schema='public'
-         AND table_name='ar_aging'
-         AND column_name='current_count'
+       SELECT 1
+       FROM pg_attribute attribute
+       JOIN pg_class relation ON relation.oid = attribute.attrelid
+       JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+       WHERE namespace.nspname = 'public'
+         AND relation.relname = 'ar_aging'
+         AND relation.relkind = 'm'
+         AND attribute.attname = 'current_count'
+         AND attribute.attnum > 0
+         AND NOT attribute.attisdropped
      );"
 )"
 if [ "$has_aging_counts" != "t" ]; then

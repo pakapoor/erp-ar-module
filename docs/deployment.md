@@ -61,6 +61,22 @@ Run `./deploy.sh --help` for the same option summary.
 If a command fails, the script exits nonzero and prints container state plus the
 last 60 log lines from all services.
 
+## Verified deployment results
+
+The following paths were executed locally against the Docker Compose stack:
+
+```bash
+./deploy.sh --no-build --test
+./deploy.sh
+```
+
+Both exited with status 0. The first completed all API, outbox, accounting,
+security, health, and idempotency assertions. The second rebuilt the images,
+correctly reported migrations 002 and 004 as already present, reused the single
+pg_cron job, refreshed the MV concurrently, and returned all four services in a
+running/healthy state. This second execution is also the rerun-safety proof: it
+did not recreate financial records or duplicate the cron schedule.
+
 ## Expected health result
 
 ```bash
@@ -104,4 +120,3 @@ rolling or blue/green rollout.
 For exact API steps, SQL inspection commands, pg_cron proof, expected financial
 values, live outbox logs, and the optional retry drill, see
 [Verification and Expected Results](testing.md).
-
