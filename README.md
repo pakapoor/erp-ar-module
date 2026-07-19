@@ -30,6 +30,7 @@ For interview/review, follow this order:
 - [Design Tradeoffs](docs/tradeoffs.md)
 - [Financial Controls](docs/financial-controls.md)
 - [Local Deployment Guide](docs/deployment.md)
+- [Test Dashboard](docs/tests.md)
 - [Verification and Expected Results](docs/testing.md)
 - [Experience Showcase](docs/experience-showcase.md)
 - [Consolidated Assessment Submission](docs/assessment-submission.md)
@@ -171,9 +172,6 @@ erp-ar-module/
 │   ├── delivery_publisher.py    DB outbox → SQS relay
 │   ├── delivery_worker.py       SQS → idempotent delivery consumer
 │   ├── fx_rate_worker.py        Scheduled ECB import and INR-rate derivation
-│   ├── tests/
-│   │   ├── test_fx_rate_worker.py  Deterministic ECB parser/derivation tests
-│   │   └── test_invoice_fx.py      Invoice conversion/validation tests
 │   ├── models/
 │   │   ├── __init__.py
 │   │   └── models.py            ORM financial and operational models
@@ -186,6 +184,7 @@ erp-ar-module/
 │       ├── delivery.py          Delivery status and CFO retry operations
 │       └── health.py            Database, MV and AR/GL reconciliation health
 └── docs/
+    ├── tests.md                       Test counts, pass rate and coverage dashboard
     ├── requirements-traceability.md  Living assessment coverage matrix
     ├── interview-walkthrough.md       10-minute narrative, Q&A and live changes
     ├── high-level-design.md           Component/API architecture
