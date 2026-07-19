@@ -66,12 +66,13 @@ Exception: Redis acceptable for non-financial read cache in Phase 2.
 |--|--|--|--|
 | Performance | Fastest | Medium | Slowest |
 | Double allocation risk | High | Medium | None |
-| Invoice approval | Overkill | Correct | Overkill |
+| Invoice approval | Correct with atomic version UPDATE | Correct | Overkill |
 | Payment allocation | Dangerous | Risky | Correct |
 
 **Decision: Selective isolation levels**
 - Invoice creation: Read Committed
-- Invoice approval: Repeatable Read
+- Invoice approval: Read Committed plus an atomic `WHERE version = If-Match`
+  compare-and-swap update
 - Payment allocation: Serializable
 - Aging report: Read Committed
 
@@ -90,7 +91,7 @@ Exception: Redis acceptable for non-financial read cache in Phase 2.
 | Financial safety | Risk | Safe |
 
 **Decision: PostgreSQL**
-Idempotency key must be committed in same ACID transaction as the payment. Redis + DB = two separate systems = possible inconsistency on crash.
+Idempotency key must be committed in same ACID transaction as the payment. Redis + DB = two separate systems = possible inconsistency on crash. Keys are scoped by tenant, entity, endpoint, and key so subsidiaries cannot collide or receive each other's cached responses.
 
 ---
 
@@ -107,6 +108,13 @@ Idempotency key must be committed in same ACID transaction as the payment. Redis
 
 **Decision: Optimistic locking with version column**
 Version column increments on every invoice mutation. If-Match header carries version from client. Server rejects if version mismatch → 409 Conflict → client refreshes. Prevents ABA problem. No deadlocks. No external dependencies.
+
+Approval performs a conditional `UPDATE ... WHERE version = expected_version AND
+status = 'DRAFT'`. Even if two requests read the same version, only one can
+claim it; the loser receives 409 before creating GL or outbox records. The
+integration suite proves stale-version rejection and races two independent
+idempotency keys, asserting one 200, one 409, one invoice journal, and one
+delivery event.
 
 ---
 
@@ -209,12 +217,27 @@ Approval, GL entries, idempotency result, and a PENDING delivery event commit in
 | | L4 (TCP level) | L7 (HTTP level) |
 |--|--|--|
 | JWT validation | Cannot read headers | Yes |
-| Rate limiting by tenant | No | Yes |
+| HTTP-aware rate limiting | No | Yes |
 | SSL termination | Yes | Yes |
 | Routing by path | No | Yes |
 
-**Decision: L7**
-We need JWT validation at gateway layer — requires reading HTTP headers. L4 operates at TCP/IP level — cannot inspect HTTP headers.
+**Decision: L7, implemented with Envoy v1.39**
+
+We need JWT validation at the gateway layer, which requires reading HTTP
+headers. L4 operates at TCP/IP level and cannot inspect them. Envoy is the only
+host-published AR entry point and routes to FastAPI on the internal Compose
+network. It verifies the JWT signature, expiry, and `kid` against the JWKS
+stub; preserves the original Authorization header so FastAPI can independently
+re-validate it; normalizes paths; injects a trace ID; and applies a local token
+bucket.
+
+**Accepted tradeoffs:** the prototype's rate limit is global per Envoy instance,
+not coordinated per tenant across replicas. Distributed/per-tenant limits need
+an external rate-limit service and shared state. Local development uses HTTP;
+production would configure managed certificates and TLS termination at Envoy.
+The development token omits issuer and audience claims, so production JWT
+configuration must require both. Public API documentation is convenient for the
+interview demo but should be disabled or access-controlled in production.
 
 ---
 
@@ -247,5 +270,11 @@ Naive cron on each AR App instance = 3 simultaneous refreshes = lock contention.
 
 **Decision: Page-based for invoice-scoped queries**
 One invoice has max 10-20 journal entries (create + payments + credit memos). OFFSET problem doesn't apply at this scale. Cursor-based pagination added in Phase 2 for date-range queries across all journal entries.
+
+Entries use deterministic `entry_date, created_at, id` ordering. An
+out-of-range page returns HTTP 200 with an empty list and unchanged pagination
+metadata. The accounting summary is calculated across the complete invoice,
+not the current page. Integration tests cover pages 1, 2, and 3 with
+`page_size=1`, duplicate prevention, page zero, and the maximum page size.
 
 ---

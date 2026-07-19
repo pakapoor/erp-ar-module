@@ -27,21 +27,25 @@ async def get_customer_aging(
     Returns as_of timestamp so user knows data freshness.
     5 min staleness is acceptable for collections team.
     """
-    # ── Validate customer belongs to tenant ────────────────
+    # Entity scope comes from the independently verified JWT. A caller cannot
+    # widen it with a query parameter.
+    if entity_id is not None and entity_id != current_user.entity_id:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    eid = current_user.entity_id
+
+    # ── Validate customer belongs to tenant and entity ─────
     result = await db.execute(
         select(Customer).where(
             and_(
                 Customer.id == customer_id,
                 Customer.tenant_id == current_user.tenant_id,
+                Customer.entity_id == eid,
             )
         )
     )
     customer = result.scalar_one_or_none()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
-
-    # ── Use entity_id from query param or JWT ──────────────
-    eid = entity_id or current_user.entity_id
 
     # ── Read from materialized view ────────────────────────
     # ar_aging MV is refreshed every 5 mins by pg_cron

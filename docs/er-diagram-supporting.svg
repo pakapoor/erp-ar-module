@@ -190,8 +190,8 @@ text { font-family: sans-serif; fill: #3d3d3a; }
 <!-- Idempotency Key -->
 <rect x="390" y="780" width="270" height="140" rx="8" stroke-width="0.5" class="gray-fill"/>
 <text class="th gray-text" x="525" y="808" text-anchor="middle" dominant-baseline="central">Idempotency key</text>
-<text class="ts gray-text" x="525" y="828" text-anchor="middle" dominant-baseline="central">id, tenant_id FK</text>
-<text class="ts gray-text" x="525" y="844" text-anchor="middle" dominant-baseline="central">endpoint, key (unique scope)</text>
+<text class="ts gray-text" x="525" y="828" text-anchor="middle" dominant-baseline="central">id, tenant_id FK, entity_id FK</text>
+<text class="ts gray-text" x="525" y="844" text-anchor="middle" dominant-baseline="central">tenant + entity + endpoint + key unique</text>
 <text class="ts gray-text" x="525" y="860" text-anchor="middle" dominant-baseline="central">request_hash</text>
 <text class="ts gray-text" x="525" y="876" text-anchor="middle" dominant-baseline="central">PROCESSING / COMPLETED</text>
 <text class="ts gray-text" x="525" y="892" text-anchor="middle" dominant-baseline="central">response_status, response_body</text>

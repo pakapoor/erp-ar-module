@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, and_, text
+from sqlalchemy import select, and_, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -54,6 +54,7 @@ async def check_idempotency(
     db: AsyncSession,
     key: str,
     tenant_id: str,
+    entity_id: str,
     endpoint: str,
     request_hash: str,
 ) -> Optional[IdempotencyKey]:
@@ -66,6 +67,7 @@ async def check_idempotency(
         select(IdempotencyKey).where(
             and_(
                 IdempotencyKey.tenant_id == tenant_id,
+                IdempotencyKey.entity_id == entity_id,
                 IdempotencyKey.endpoint == endpoint,
                 IdempotencyKey.key == key,
             )
@@ -94,6 +96,7 @@ async def create_idempotency_key(
     db: AsyncSession,
     key: str,
     tenant_id: str,
+    entity_id: str,
     endpoint: str,
     request_hash: str,
 ):
@@ -101,6 +104,7 @@ async def create_idempotency_key(
     idem = IdempotencyKey(
         key=key,
         tenant_id=tenant_id,
+        entity_id=entity_id,
         endpoint=endpoint,
         status="PROCESSING",
         request_hash=request_hash,
@@ -114,6 +118,7 @@ async def complete_idempotency_key(
     db: AsyncSession,
     key: str,
     tenant_id: str,
+    entity_id: str,
     endpoint: str,
     response_status: int,
     response_body: dict,
@@ -123,6 +128,7 @@ async def complete_idempotency_key(
         select(IdempotencyKey).where(
             and_(
                 IdempotencyKey.tenant_id == tenant_id,
+                IdempotencyKey.entity_id == entity_id,
                 IdempotencyKey.endpoint == endpoint,
                 IdempotencyKey.key == key,
             )
@@ -169,9 +175,14 @@ async def create_invoice(
         text("""
             SELECT
                 set_config('app.current_user_id', :user_id, true),
-                set_config('app.tenant_id', :tenant_id, true)
+                set_config('app.tenant_id', :tenant_id, true),
+                set_config('app.entity_id', :entity_id, true)
         """),
-        {"user_id": current_user.user_id, "tenant_id": current_user.tenant_id},
+        {
+            "user_id": current_user.user_id,
+            "tenant_id": current_user.tenant_id,
+            "entity_id": current_user.entity_id,
+        },
     )
 
     # ── Idempotency check ──────────────────────────────────
@@ -180,7 +191,7 @@ async def create_invoice(
     ).hexdigest()
 
     existing = await check_idempotency(
-        db, x_idempotency_key, current_user.tenant_id,
+        db, x_idempotency_key, current_user.tenant_id, current_user.entity_id,
         "POST /invoices", request_hash
     )
     if existing:
@@ -195,6 +206,7 @@ async def create_invoice(
             and_(
                 Customer.id == payload.customer_id,
                 Customer.tenant_id == current_user.tenant_id,
+                Customer.entity_id == current_user.entity_id,
                 Customer.is_active == True,
             )
         )
@@ -205,7 +217,7 @@ async def create_invoice(
 
     # ── Begin ACID transaction ─────────────────────────────
     await create_idempotency_key(
-        db, x_idempotency_key, current_user.tenant_id,
+        db, x_idempotency_key, current_user.tenant_id, current_user.entity_id,
         "POST /invoices", request_hash
     )
 
@@ -235,6 +247,7 @@ async def create_invoice(
             and_(
                 Invoice.customer_id == payload.customer_id,
                 Invoice.tenant_id == current_user.tenant_id,
+                Invoice.entity_id == current_user.entity_id,
                 Invoice.status.not_in(["PAID", "VOID", "WRITTEN_OFF"]),
             )
         )
@@ -344,6 +357,7 @@ async def create_invoice(
         db,
         x_idempotency_key,
         current_user.tenant_id,
+        current_user.entity_id,
         "POST /invoices",
         201,
         response_body,
@@ -372,6 +386,7 @@ async def get_invoice(
             and_(
                 Invoice.id == invoice_id,
                 Invoice.tenant_id == current_user.tenant_id,
+                Invoice.entity_id == current_user.entity_id,
             )
         )
     )
@@ -381,7 +396,13 @@ async def get_invoice(
 
     # ── Fetch customer ─────────────────────────────────────
     customer_result = await db.execute(
-        select(Customer).where(Customer.id == invoice.customer_id)
+        select(Customer).where(
+            and_(
+                Customer.id == invoice.customer_id,
+                Customer.tenant_id == current_user.tenant_id,
+                Customer.entity_id == current_user.entity_id,
+            )
+        )
     )
     customer = customer_result.scalar_one()
 
@@ -390,6 +411,8 @@ async def get_invoice(
         select(PaymentAllocation, Payment)
         .join(Payment, Payment.id == PaymentAllocation.payment_id)
         .where(PaymentAllocation.invoice_id == invoice_id)
+        .where(PaymentAllocation.tenant_id == current_user.tenant_id)
+        .where(Payment.entity_id == current_user.entity_id)
         .order_by(Payment.payment_date)
     )
     payment_history = [
@@ -410,6 +433,8 @@ async def get_invoice(
         .where(
             and_(
                 CreditMemo.invoice_id == invoice_id,
+                CreditMemo.tenant_id == current_user.tenant_id,
+                CreditMemo.entity_id == current_user.entity_id,
                 CreditMemo.status == "APPLIED",
             )
         )
@@ -432,6 +457,7 @@ async def get_invoice(
             and_(
                 AuditLog.table_name == "invoice",
                 AuditLog.record_id == invoice_id,
+                AuditLog.tenant_id == current_user.tenant_id,
                 AuditLog.action == "UPDATE",
             )
         )
@@ -509,15 +535,18 @@ async def approve_invoice(
     current_user: CurrentUser = Depends(require_role("invoice_approver", "cfo")),
     db: AsyncSession = Depends(get_db),
 ):
-    # Must be the first DB statement in this transaction.
-    await db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
     await db.execute(
         text("""
             SELECT
                 set_config('app.current_user_id', :user_id, true),
-                set_config('app.tenant_id', :tenant_id, true)
+                set_config('app.tenant_id', :tenant_id, true),
+                set_config('app.entity_id', :entity_id, true)
         """),
-        {"user_id": current_user.user_id, "tenant_id": current_user.tenant_id},
+        {
+            "user_id": current_user.user_id,
+            "tenant_id": current_user.tenant_id,
+            "entity_id": current_user.entity_id,
+        },
     )
 
     # ── Idempotency check ──────────────────────────────────
@@ -526,7 +555,7 @@ async def approve_invoice(
     ).hexdigest()
 
     existing = await check_idempotency(
-        db, x_idempotency_key, current_user.tenant_id,
+        db, x_idempotency_key, current_user.tenant_id, current_user.entity_id,
         f"POST /invoices/{invoice_id}/approve", request_hash
     )
     if existing:
@@ -541,6 +570,7 @@ async def approve_invoice(
             and_(
                 Invoice.id == invoice_id,
                 Invoice.tenant_id == current_user.tenant_id,
+                Invoice.entity_id == current_user.entity_id,
             )
         )
     )
@@ -591,7 +621,7 @@ async def approve_invoice(
 
     # ── Begin idempotency key ──────────────────────────────
     await create_idempotency_key(
-        db, x_idempotency_key, current_user.tenant_id,
+        db, x_idempotency_key, current_user.tenant_id, current_user.entity_id,
         f"POST /invoices/{invoice_id}/approve", request_hash
     )
 
@@ -600,6 +630,7 @@ async def approve_invoice(
         select(GLAccount).where(
             and_(
                 GLAccount.entity_id == current_user.entity_id,
+                GLAccount.tenant_id == current_user.tenant_id,
                 GLAccount.account_code.in_([GL_AR, GL_REVENUE, GL_TAX_PAYABLE]),
             )
         )
@@ -613,11 +644,42 @@ async def approve_invoice(
     if GL_TAX_PAYABLE not in gl_accounts:
         raise BusinessRuleException("GL_ACCOUNT_MISSING", "Tax Payable GL account (2200) not found")
 
+    # ── Atomically claim the expected invoice version ─────
+    # Both concurrent requests may read version N, but only one UPDATE can
+    # change N → N+1. The loser gets no row and produces no GL/outbox records.
+    now = datetime.utcnow()
+    claimed = await db.execute(
+        update(Invoice)
+        .where(
+            and_(
+                Invoice.id == invoice_id,
+                Invoice.tenant_id == current_user.tenant_id,
+                Invoice.entity_id == current_user.entity_id,
+                Invoice.version == invoice.version,
+                Invoice.status == "DRAFT",
+            )
+        )
+        .values(
+            status="APPROVED",
+            approved_by=current_user.user_id,
+            approved_at=now,
+            period_id=period.id,
+            version=Invoice.version + 1,
+            updated_at=now,
+        )
+        .returning(Invoice.version)
+        .execution_options(synchronize_session=False)
+    )
+    new_version = claimed.scalar_one_or_none()
+    if new_version is None:
+        raise VersionConflictException(
+            "Invoice was modified by another request. Please refresh."
+        )
+
     # ── Generate GL journal entry ──────────────────────────
     # Debit  AR            total_amount
     # Credit Revenue       subtotal_amount
     # Credit Tax Payable   tax_amount
-    now = datetime.utcnow()
     journal_entry = JournalEntry(
         tenant_id=current_user.tenant_id,
         entity_id=current_user.entity_id,
@@ -670,14 +732,6 @@ async def approve_invoice(
             base_credit_amount=invoice.base_tax_amount,
         ))
 
-    # ── Update invoice status ──────────────────────────────
-    invoice.status = "APPROVED"
-    invoice.approved_by = current_user.user_id
-    invoice.approved_at = now
-    invoice.period_id = period.id
-    invoice.version += 1
-    invoice.updated_at = now
-
     # The outbox event commits atomically with approval and its GL entry.
     # Delivery itself happens after commit in a separate worker.
     customer_result = await db.execute(
@@ -685,6 +739,7 @@ async def approve_invoice(
             and_(
                 Customer.id == invoice.customer_id,
                 Customer.tenant_id == current_user.tenant_id,
+                Customer.entity_id == current_user.entity_id,
             )
         )
     )
@@ -711,10 +766,10 @@ async def approve_invoice(
     # ── Build response ─────────────────────────────────────
     response_body = {
         "id": invoice.id,
-        "status": invoice.status,
-        "version": invoice.version,
-        "approved_by": invoice.approved_by,
-        "approved_at": invoice.approved_at.isoformat(),
+        "status": "APPROVED",
+        "version": new_version,
+        "approved_by": current_user.user_id,
+        "approved_at": now.isoformat(),
         "notes": payload.notes,
         "journal_entry_id": journal_entry.id,
         "delivery_status": "QUEUED",
@@ -724,6 +779,7 @@ async def approve_invoice(
         db,
         x_idempotency_key,
         current_user.tenant_id,
+        current_user.entity_id,
         f"POST /invoices/{invoice_id}/approve",
         200,
         response_body,

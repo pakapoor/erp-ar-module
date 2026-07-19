@@ -13,14 +13,17 @@
 Modular monolith architecture for prototype. All components run in Docker on a single host. PostgreSQL is the single source of truth — no Redis, no external cache. Zero Trust security — JWT validated at both gateway and application layer.
 
 Core request flow:
-Client → L7 API Gateway → AR Application (FastAPI) → PostgreSQL
+Client → Envoy L7 Gateway (:8000) → AR Application (FastAPI, internal :8080) → PostgreSQL
 
 Asynchronous delivery flow:
 AR approval transaction → PostgreSQL delivery_outbox → Outbox Worker → Delivery Stub
 
 Key decisions:
-- L7 Gateway: JWT signature check only — stateless, no header extraction
+- Envoy L7 Gateway: validates JWT signature/expiry/key ID, normalizes paths,
+  applies a per-instance local rate limit, injects a trace ID, and forwards the
+  original JWT; it does not derive tenant/entity authorization headers
 - AR Application: re-validates JWT independently (Zero Trust)
+- Network boundary: FastAPI has no host-published port; only Envoy is public
 - No Redis: PostgreSQL enforces all consistency guarantees
 - ACID transactions: all financial operations atomic
 - Optimistic locking: version column prevents ABA problem
@@ -92,7 +95,8 @@ API flows shown in diagram:
 - Allocation modes: AUTO (FIFO oldest first) or MANUAL (client specifies)
 - One GL entry for entire payment (not per invoice):
   - Debit  Cash  total_payment_amount
-  - Credit AR    total_payment_amount
+  - Credit AR    allocated_amount
+  - Credit Customer Credit liability for any unapplied overpayment
   - + FX Gain/Loss line if multi-currency
 - Payment allocation detail stored in payment_allocation table
 - Defence in depth: idempotency key + UNIQUE(tenant_id, customer_id, payment_reference)
@@ -109,7 +113,7 @@ API flows shown in diagram:
 - Result: 200 + aging buckets + as_of timestamp
 
 ### ⑥ GET /journal-entries (FR9)
-- Required role: any authenticated user + auditor role sees all entities
+- Required role: any authenticated user of the same entity
 - invoice_id required filter (SOX — must be traceable to source document)
 - Live query — journal entries immutable but must never appear missing (SOX!)
 - Page-based pagination (max 20 rows per invoice — cursor not needed)
@@ -131,13 +135,14 @@ API flows shown in diagram:
 - Exception: AR aging (5 min staleness acceptable)
 
 ### Security (NFR4)
-- L7 Gateway: JWT signature check (early rejection)
+- Envoy L7 Gateway: JWT signature, expiry, and `kid` check (early rejection)
 - AR Application: re-validates JWT independently (Zero Trust)
 - Both fetch public keys from Auth Server JWKS endpoint
 - kid header in JWT → lookup correct public key → verify signature
+- Local demo traffic is HTTP; production terminates TLS at Envoy with managed certificates
 
 ### Observability (NFR5)
-- Gateway injects X-Trace-ID on every request
+- Envoy overwrites/injects `X-Trace-ID` from its generated request ID
 - Flows through AR App → PostgreSQL → audit_log
 - DataDog APM traces full request lifecycle
 - PagerDuty alerts on: AR/GL mismatch, payment failure > 1%, DB down

@@ -180,7 +180,7 @@ X-Idempotency-Key: "tata-steel-P001-20240131"
 
 Server:
 Step 0: Canonicalize the request and calculate its SHA-256 request_hash
-Step 1: Check idempotency_key by (tenant_id, endpoint, key)
+Step 1: Check idempotency_key by (tenant_id, entity_id, endpoint, key)
 → Key COMPLETED + same hash  → replay cached HTTP status and body
 → Key PROCESSING + same hash → return 409 REQUEST_IN_PROGRESS
 → Same key + different hash  → return 409 IDEMPOTENCY_KEY_REUSED
@@ -195,7 +195,7 @@ No duplicate payment! ✅
 **Atomic Transaction — Crash Safety:**
 ```
 BEGIN TRANSACTION
-  Step 0: Claim unique (tenant_id, endpoint, key) with request_hash
+  Step 0: Claim unique (tenant_id, entity_id, endpoint, key) with request_hash
   Step 1: Record payment
   Step 2: Allocate to invoices
   Step 3: Generate GL journal entry
@@ -238,7 +238,8 @@ System must protect data in transit and at rest. Access controlled via RBAC (FR1
 ```
 HTTPS/TLS 1.3 for all API calls
 Services communicate within VPC (not public internet)
-API Gateway handles SSL termination
+Envoy handles TLS termination in production. The local Docker demo intentionally
+uses HTTP on localhost; this is not a production security posture.
 ```
 
 **At Rest:**
@@ -377,7 +378,7 @@ IoT:  Edge → Kafka → Flink → SQS → ServiceNow
       Each hop traced with correlation ID
       DataDog + PagerDuty for alerts
 
-ERP:  API Gateway → FastAPI → PostgreSQL
+ERP:  Envoy L7 Gateway → FastAPI (internal network only) → PostgreSQL
       Each hop traced with trace_id
       Same DataDog + PagerDuty stack ✅
 ```

@@ -4,7 +4,7 @@
 
 This prototype implements the six APIs required by the assessment and demonstrates one complete financial path: create an invoice, retrieve it, approve it, generate the receivable GL entry, apply a partial payment, report aging, and retrieve the resulting journal trail.
 
-The architecture is a modular monolith implemented with FastAPI and PostgreSQL. This keeps invoice, payment, allocation, audit, GL, and delivery-outbox writes within ACID transaction boundaries. The application is stateless and runs with a delivery/JWKS stub plus an outbox worker under Docker Compose.
+The architecture is a modular monolith implemented with FastAPI and PostgreSQL behind an Envoy L7 gateway. This keeps invoice, payment, allocation, audit, GL, and delivery-outbox writes within ACID transaction boundaries. Envoy rejects invalid JWTs early, injects trace IDs, and is the only public AR entry point; the internal FastAPI application independently re-validates JWTs. The application runs with a delivery/JWKS stub plus an outbox worker under Docker Compose.
 
 Production delivery adapters (Email/EDI/IRP), credit memos, void/reissue, write-off, intercompany elimination, full FX processing, manual journals, and period-management APIs are designed but not represented as completed prototype features. The durable delivery outbox, retrying worker, and console stub are implemented.
 
@@ -26,7 +26,7 @@ Core entities:
 
 ### Tenant and entity isolation
 
-Tenant, user, and default entity come from the verified JWT rather than the request body. Application queries filter by tenant and financial transactions set transaction-local tenant/user context for PostgreSQL. Tables define tenant RLS policies.
+Tenant, user, and entity come from the verified JWT rather than the request body. Application queries filter by both tenant and entity, financial transactions set transaction-local tenant/entity/user context for PostgreSQL, and idempotency caches are entity-scoped. Cross-tenant and cross-entity API tests verify concealed 404 responses. Tables define tenant RLS policies.
 
 Production hardening: run through a non-owner database role, enable `FORCE ROW LEVEL SECURITY`, validate current user-to-entity permission from the database, and add composite tenant-aware foreign keys and cross-tenant tests.
 
@@ -57,7 +57,7 @@ Cr 1200 Accounts Receivable  100,000
 
 The resulting invoice balance, aging total, and net GL AR are all INR 74,000. The health endpoint reports whether AR subledger and GL account 1200 match.
 
-Payments support AUTO FIFO and MANUAL allocation in code. The integration path verifies AUTO partial allocation and cached idempotent retry. Overpayment liability and multi-currency allocation require further production hardening before being claimed complete.
+Payments support AUTO FIFO and MANUAL allocation in code. The integration path verifies AUTO partial allocation, cached idempotent retry, and balanced overpayment accounting. Unapplied cash is credited to the 2100 Customer Credit liability account. Multi-currency allocation requires further production hardening before being claimed complete.
 
 Credit memo and write-off accounting are documented in [Functional Requirements](FRs.md) and [Financial Controls](financial-controls.md), but their endpoints are outside the required prototype.
 
@@ -89,7 +89,7 @@ Approval requires a separate approver, an OPEN document-date period, an idempote
 
 Operational extension: `GET /health` checks database access, materialized-view age, and AR-to-GL reconciliation.
 
-The complete procedure, expected response values, database inspection queries,
+The complete procedure, expected response values, gateway isolation/JWT checks, database inspection queries,
 pg_cron proof, delivery logs, and retry drill are documented in
 [Verification and Expected Results](testing.md).
 
@@ -101,13 +101,14 @@ Run the repeatable integration test:
 
 The script seeds deterministic data, generates fresh development JWTs, derives the created invoice ID, uses fail-on-HTTP-error calls, performs financial assertions, and verifies that retrying a completed payment returns the original payment rather than creating a duplicate.
 
-Control assertions also verify that another tenant receives 404 for the
-invoice, an invoice creator receives 403 from approval, and reuse of a payment
-idempotency key with a changed payload receives 409.
+Control assertions also verify tenant/entity isolation, entity-scoped cached
+responses, creator/approver separation, overpayment liability accounting,
+changed-payload idempotency rejection, stale versions, and a real simultaneous
+approval race.
 
 ### Idempotency
 
-The database scope is `(tenant_id, endpoint, key)` with a request hash. COMPLETED returns the cached status/body; PROCESSING returns conflict; the same key with a different body returns conflict. The claim, financial records, and cached response commit together. Payment reference uniqueness provides a second database-level duplicate defense.
+The database scope is `(tenant_id, entity_id, endpoint, key)` with a request hash. COMPLETED returns the cached status/body; PROCESSING returns conflict; the same key with a different body returns conflict. The claim, financial records, and cached response commit together. Payment reference uniqueness provides a second database-level duplicate defense.
 
 ### Bulk operations
 
@@ -142,8 +143,8 @@ The project was expanded beyond the original 3–4 hour timebox as an interactiv
 
 ## 9. Known Limits
 
-- The integration suite verifies the required happy path and selected security/idempotency failures, but not a comprehensive concurrency matrix.
+- The integration suite verifies the required happy path, entity/tenant isolation, overpayment accounting, stale versions, and simultaneous invoice approval. Payment and worker concurrency are protected in code but do not yet have a comprehensive load/race matrix.
 - RLS needs a non-owner runtime role plus `FORCE ROW LEVEL SECURITY` for production-grade defense in depth.
 - Journal immutability and aggregate balancing need database privilege/constraint enforcement.
 - The custom PostgreSQL image loads pg_cron. One job owned by the `postgres` system database refreshes `erp_db.ar_aging` concurrently every five minutes; the integration test also refreshes explicitly for deterministic assertions.
-- Full multi-currency, overpayment liability, intercompany, amendment, and period-management workflows are deferred.
+- Full multi-currency, intercompany, amendment, and period-management workflows are deferred.

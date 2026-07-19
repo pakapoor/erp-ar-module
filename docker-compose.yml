@@ -24,8 +24,8 @@ services:
   app:
     build: .
     container_name: erp_app
-    ports:
-      - "8000:8000"
+    expose:
+      - "8080"
     environment:
       DATABASE_URL: postgresql://erp_user:erp_password@db:5432/erp_db
       JWT_JWKS_URL: http://stub:9000/.well-known/jwks.json
@@ -35,7 +35,23 @@ services:
         condition: service_healthy
     volumes:
       - ./src:/app/src
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8080 --reload
+
+  gateway:
+    image: envoyproxy/envoy:v1.39.0
+    container_name: erp_gateway
+    ports:
+      - "8000:8000"
+    expose:
+      - "9901"
+    volumes:
+      - ./gateway/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    command: ["-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
+    depends_on:
+      app:
+        condition: service_started
+      stub:
+        condition: service_started
 
   stub:
     build:

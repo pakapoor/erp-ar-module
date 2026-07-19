@@ -722,6 +722,7 @@ CREATE INDEX idx_audit_changed_by ON audit_log(changed_by);
 CREATE TABLE idempotency_key (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id         UUID NOT NULL REFERENCES tenant(id),
+  entity_id         UUID NOT NULL REFERENCES entity(id),
   endpoint          VARCHAR(100) NOT NULL,
   key               VARCHAR(255) NOT NULL,
   request_hash      VARCHAR(64) NOT NULL,
@@ -732,7 +733,7 @@ CREATE TABLE idempotency_key (
   updated_at        TIMESTAMP NOT NULL DEFAULT NOW(),
   expires_at        TIMESTAMP NOT NULL DEFAULT NOW() + INTERVAL '24 hours',
 
-  CONSTRAINT idempotency_scope_unique UNIQUE (tenant_id, endpoint, key),
+  CONSTRAINT idempotency_scope_unique UNIQUE (tenant_id, entity_id, endpoint, key),
   CONSTRAINT idempotency_request_hash_valid CHECK (request_hash ~ '^[0-9a-f]{64}$'),
   CONSTRAINT idempotency_status_valid CHECK (
     status IN ('PROCESSING', 'COMPLETED')
@@ -750,6 +751,7 @@ CREATE TABLE idempotency_key (
 );
 
 CREATE INDEX idx_idempotency_tenant ON idempotency_key(tenant_id);
+CREATE INDEX idx_idempotency_entity ON idempotency_key(entity_id);
 CREATE INDEX idx_idempotency_expires ON idempotency_key(expires_at);
 
 ALTER TABLE idempotency_key ENABLE ROW LEVEL SECURITY;

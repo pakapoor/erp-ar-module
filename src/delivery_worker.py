@@ -65,6 +65,7 @@ async def claim_event() -> Optional[dict]:
             return {
                 "id": event.id,
                 "tenant_id": event.tenant_id,
+                "entity_id": event.entity_id,
                 "invoice_id": event.invoice_id,
                 "payload": event.payload,
                 "attempt_count": event.attempt_count,
@@ -99,6 +100,7 @@ async def mark_delivered(event: dict) -> None:
                     and_(
                         Invoice.id == event["invoice_id"],
                         Invoice.tenant_id == event["tenant_id"],
+                        Invoice.entity_id == event["entity_id"],
                         Invoice.sent_at.is_(None),
                     )
                 )

@@ -229,7 +229,7 @@ show_failure_context() {
     docker compose ps >&2
     echo >&2
     echo "Recent service logs:" >&2
-    docker compose logs --tail=60 db app stub delivery_worker >&2
+    docker compose logs --tail=60 gateway db app stub delivery_worker >&2
   else
     echo "Docker Compose is not available; service diagnostics were skipped." >&2
   fi
@@ -275,6 +275,8 @@ ensure_compose
 log "Checking Docker Compose configuration"
 docker compose version
 docker compose config --quiet
+docker compose run --rm --no-deps gateway \
+  --mode validate -c /etc/envoy/envoy.yaml >/dev/null
 
 if [ "$BUILD_IMAGES" = true ]; then
   log "Building deployment images"
@@ -325,17 +327,50 @@ else
   echo "Migration 004 already present"
 fi
 
+idempotency_has_entity="$(
+  docker compose exec -T db psql -U erp_user -d erp_db -Atc \
+    "SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'idempotency_key'
+         AND column_name = 'entity_id'
+     );"
+)"
+if [ "$idempotency_has_entity" != "t" ]; then
+  docker compose exec -T db psql -U erp_user -d erp_db \
+    -v ON_ERROR_STOP=1 \
+    -f /docker-entrypoint-initdb.d/005_entity_scoped_idempotency.sql
+else
+  echo "Migration 005 already present"
+fi
+
 log "Refreshing the aging snapshot for deterministic health verification"
 docker compose exec -T db psql -U erp_user -d erp_db \
   -v ON_ERROR_STOP=1 \
   -c "REFRESH MATERIALIZED VIEW CONCURRENTLY ar_aging" >/dev/null
 
-log "Starting the AR application and delivery worker"
-docker compose up "${up_options[@]}" app delivery_worker
+log "Starting the internal AR application, delivery worker, and L7 gateway"
+docker compose up "${up_options[@]}" app delivery_worker gateway
 
 log "Waiting for service health checks"
 wait_for_url "http://localhost:9000/health" "Delivery stub"
-wait_for_url "http://localhost:8000/health" "AR application"
+wait_for_url "http://localhost:8000/health" "Envoy gateway and AR application"
+
+gateway_container="$(docker compose ps --status running --quiet gateway)"
+if [ -z "$gateway_container" ]; then
+  echo "Envoy gateway is not running" >&2
+  exit 1
+fi
+
+published_app_port="$(
+  docker inspect erp_app \
+    --format '{{json (index .NetworkSettings.Ports "8080/tcp")}}'
+)"
+if [ "$published_app_port" != "null" ]; then
+  echo "AR application must not publish a host port: $published_app_port" >&2
+  exit 1
+fi
 
 worker_container="$(docker compose ps --status running --quiet delivery_worker)"
 if [ -z "$worker_container" ]; then
@@ -356,7 +391,8 @@ fi
 log "Deployment successful"
 docker compose ps
 echo
-echo "AR API:        http://localhost:8000"
+echo "L7 Gateway:    http://localhost:8000"
+echo "AR API:        internal app:8080 (not host-published)"
 echo "API docs:      http://localhost:8000/docs"
 echo "Delivery stub: http://localhost:9000"
 echo "Live delivery: docker compose logs -f stub delivery_worker"

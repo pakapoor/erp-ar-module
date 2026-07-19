@@ -38,6 +38,7 @@ async def get_journal_entries(
             and_(
                 Invoice.id == invoice_id,
                 Invoice.tenant_id == current_user.tenant_id,
+                Invoice.entity_id == current_user.entity_id,
             )
         )
     )
@@ -55,6 +56,7 @@ async def get_journal_entries(
             SELECT COUNT(*)
             FROM journal_entry
             WHERE tenant_id = :tenant_id
+              AND entity_id = :entity_id
               AND (
                 (reference_type = 'INVOICE' AND reference_id = :invoice_id)
                 OR id IN (
@@ -64,10 +66,15 @@ async def get_journal_entries(
                     WHERE je.reference_type = 'PAYMENT'
                       AND pa.invoice_id = :invoice_id
                       AND je.tenant_id = :tenant_id
+                      AND je.entity_id = :entity_id
                 )
               )
         """),
-        {"tenant_id": current_user.tenant_id, "invoice_id": invoice_id}
+        {
+            "tenant_id": current_user.tenant_id,
+            "entity_id": current_user.entity_id,
+            "invoice_id": invoice_id,
+        }
     )
     total = count_result.scalar()
 
@@ -78,6 +85,7 @@ async def get_journal_entries(
                    document_date, entry_date, description, created_by, currency
             FROM journal_entry
             WHERE tenant_id = :tenant_id
+              AND entity_id = :entity_id
               AND (
                 (reference_type = 'INVOICE' AND reference_id = :invoice_id)
                 OR id IN (
@@ -87,13 +95,15 @@ async def get_journal_entries(
                     WHERE je.reference_type = 'PAYMENT'
                       AND pa.invoice_id = :invoice_id
                       AND je.tenant_id = :tenant_id
+                      AND je.entity_id = :entity_id
                 )
               )
-            ORDER BY entry_date ASC
+            ORDER BY entry_date ASC, created_at ASC, id ASC
             LIMIT :limit OFFSET :offset
         """),
         {
             "tenant_id": current_user.tenant_id,
+            "entity_id": current_user.entity_id,
             "invoice_id": invoice_id,
             "limit": page_size,
             "offset": offset,
@@ -101,10 +111,52 @@ async def get_journal_entries(
     )
     entries = entries_result.fetchall()
 
+    # Summary is invoice-scoped, not page-scoped. Otherwise page_size=1 would
+    # misleadingly show only the approval debit on page 1 and only the payment
+    # credit on page 2.
+    summary_result = await db.execute(
+        text("""
+            WITH invoice_entries AS (
+                SELECT id
+                FROM journal_entry
+                WHERE tenant_id = :tenant_id
+                  AND entity_id = :entity_id
+                  AND (
+                    (reference_type = 'INVOICE' AND reference_id = :invoice_id)
+                    OR id IN (
+                        SELECT je.id
+                        FROM journal_entry je
+                        JOIN payment_allocation pa
+                          ON pa.payment_id = je.reference_id
+                        WHERE je.reference_type = 'PAYMENT'
+                          AND pa.invoice_id = :invoice_id
+                          AND je.tenant_id = :tenant_id
+                          AND je.entity_id = :entity_id
+                    )
+                  )
+            )
+            SELECT
+                COALESCE(SUM(jel.debit_amount), 0) AS total_debited_ar,
+                COALESCE(SUM(jel.credit_amount), 0) AS total_credited_ar
+            FROM invoice_entries entries
+            JOIN journal_entry_line jel ON jel.journal_entry_id = entries.id
+            JOIN gl_account ga ON ga.id = jel.gl_account_id
+            WHERE ga.account_code = '1200'
+              AND ga.tenant_id = :tenant_id
+              AND ga.entity_id = :entity_id
+        """),
+        {
+            "tenant_id": current_user.tenant_id,
+            "entity_id": current_user.entity_id,
+            "invoice_id": invoice_id,
+        },
+    )
+    summary = summary_result.one()
+    total_debited_ar = Decimal(str(summary.total_debited_ar))
+    total_credited_ar = Decimal(str(summary.total_credited_ar))
+
     # ── Fetch lines for each entry ─────────────────────────
     journal_entries_response = []
-    total_debited_ar = Decimal("0")
-    total_credited_ar = Decimal("0")
 
     for entry in entries:
         lines_result = await db.execute(
@@ -129,12 +181,6 @@ async def get_journal_entries(
                 f"UNBALANCED JOURNAL ENTRY DETECTED: {entry.id} "
                 f"debits={total_debits} credits={total_credits}"
             )
-
-        # Track AR movements for summary
-        for line in lines:
-            if line.account_code == "1200":  # AR account
-                total_debited_ar += Decimal(str(line.debit_amount))
-                total_credited_ar += Decimal(str(line.credit_amount))
 
         journal_entries_response.append({
             "id": str(entry.id),

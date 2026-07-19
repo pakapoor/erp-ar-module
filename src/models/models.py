@@ -449,6 +449,7 @@ class IdempotencyKey(Base):
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
     tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenant.id"), nullable=False)
+    entity_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("entity.id"), nullable=False)
     endpoint: Mapped[str] = mapped_column(String(100), nullable=False)
     key: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="PROCESSING")
@@ -460,8 +461,12 @@ class IdempotencyKey(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "endpoint", "key", name="idempotency_scope_unique"),
+        UniqueConstraint(
+            "tenant_id", "entity_id", "endpoint", "key",
+            name="idempotency_scope_unique",
+        ),
         Index("idx_idempotency_tenant", "tenant_id"),
+        Index("idx_idempotency_entity", "entity_id"),
         Index("idx_idempotency_expires", "expires_at"),
     )
 

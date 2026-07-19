@@ -14,11 +14,12 @@ docker compose ps
 The equivalent manual start is `docker compose up -d --build`, but the
 deployment script also performs migration detection and health verification.
 
-Expected: four services are running:
+Expected: five services are running:
 
 | Service | Container | Expected state | Purpose |
 |---|---|---|---|
-| `app` | `erp_app` | Up | FastAPI AR application on port 8000 |
+| `gateway` | `erp_gateway` | Up | Envoy L7 gateway on host port 8000 |
+| `app` | `erp_app` | Up | FastAPI AR application on internal port 8080 only |
 | `db` | `erp_db` | Up (healthy) | PostgreSQL with pg_cron on port 5432 |
 | `stub` | `erp_stub` | Up | JWKS and delivery console stub on port 9000 |
 | `delivery_worker` | `erp_delivery_worker` | Up | Transactional-outbox consumer |
@@ -36,22 +37,31 @@ Expected: the stub reports `healthy`. The AR endpoint returns HTTP 200 with
 may report stale until its first scheduled refresh; the integration test below
 refreshes it explicitly before asserting health.
 
+Every AR API command below enters through Envoy on port 8000. The FastAPI
+container deliberately has no host-published port.
+
 ## 2. Run the repeatable integration suite
 
 ```bash
 ./test_api.sh
 ```
 
-The script safely reruns because seed inserts use `ON CONFLICT DO NOTHING` and
-write requests use deterministic idempotency keys. A rerun returns cached
-committed responses instead of creating duplicate invoices, payments, or GL
-entries.
+The script safely reruns because seed inserts use `ON CONFLICT DO NOTHING`, the
+main walkthrough uses deterministic idempotency keys, and dynamically created
+concurrency invoices are settled to zero before exit. A rerun returns cached
+walkthrough responses without creating duplicate invoices, payments, or GL
+entries; it creates a fresh, settled invoice for each real concurrency race.
 
 ### Assertions and expected results
 
 | Step | Expected result |
 |---|---|
 | Seed/JWT setup | Reliance tenant/entity/users/customer/GL accounts/OPEN July 2026 period exist; fresh one-hour development JWTs are generated |
+| Gateway missing JWT | HTTP 401 before the protected request reaches FastAPI |
+| Gateway invalid signature | HTTP 401 for a correctly shaped token signed with the wrong secret |
+| Application network isolation | Docker reports no host mapping for FastAPI port 8080 |
+| Zero Trust application check | A direct Compose-network request with an invalid JWT is independently rejected with HTTP 401 by FastAPI |
+| Trace propagation | Envoy-generated request ID is returned as `X-Trace-ID` by FastAPI |
 | API1 `POST /invoices` | HTTP 201; DRAFT version 1; server-calculated subtotal INR 150,000, tax INR 24,000, total INR 174,000 |
 | API2 `GET /invoices/{id}` | HTTP 200; same invoice and two line items; ETag reflects the current version |
 | API3 `POST /invoices/{id}/approve` | HTTP 200; APPROVED version 2; approval journal ID returned; delivery status QUEUED on a fresh run |
@@ -60,10 +70,19 @@ entries.
 | API4 same-key retry | Original payment ID and response are returned; no second payment is created |
 | API5 customer aging | HTTP 200; current bucket contains one invoice totaling INR 74,000 |
 | API6 invoice journals | HTTP 200; two entries; every entry balances; net GL AR is INR 74,000 |
+| API6 pagination pages 1 and 2 | One distinct journal per page; `total=2`, `total_pages=2`; both retain invoice-wide net AR INR 74,000 |
+| API6 pagination page 3 | HTTP 200 with an empty journal list and unchanged invoice-wide summary |
+| API6 invalid pagination | HTTP 422 for page 0 and page size 101 |
 | API7 health | HTTP 200; database healthy and AR/GL reconciliation MATCHED |
 | Cross-tenant read | HTTP 404 so record existence is concealed |
+| Cross-entity invoice/journal/aging reads | HTTP 404 so sibling-entity records are concealed |
+| Cross-entity idempotency-key collision | HTTP 404; another entity's cached response is never returned |
 | Creator approval attempt | HTTP 403 due to RBAC/SOX separation |
 | Same idempotency key, changed payment | HTTP 409; changed request is not replayed |
+| FR4 overpayment | INR 1,500 cash receipt clears INR 1,000 AR and credits INR 500 to GL 2100 Customer Credit; journal balances |
+| T6 stale version | HTTP 409 for stale `If-Match` |
+| T6 simultaneous approval | Exactly one HTTP 200 and one HTTP 409; exactly one approval GL entry and one outbox event |
+| T6 cleanup | Control invoice is paid to zero so repeated runs preserve deterministic aging |
 
 The final line must be:
 
@@ -220,8 +239,9 @@ docker compose logs --tail=100 app db stub delivery_worker
     -f /docker-entrypoint-initdb.d/004_delivery_outbox.sql
   ```
 
-  Apply each migration only after checking which versions that development
-  database already contains; migration `004` is not designed to recreate an
-  existing policy repeatedly.
+  `deploy.sh` detects and applies migration 005 automatically when idempotency
+  keys are not yet entity-scoped. Apply each migration only after checking
+  which versions that development database already contains; migration `004`
+  is not designed to recreate an existing policy repeatedly.
 - Port conflict: override `BASE_URL` for the script only if the app is exposed
   elsewhere, for example `BASE_URL=http://localhost:8080 ./test_api.sh`.

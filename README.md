@@ -9,6 +9,7 @@ Built as part of a Principal Engineer technical assessment for DeepRunner.ai.
 ```
 
 ## Tech Stack
+- **L7 API Gateway:** Envoy
 - **Backend:** Python / FastAPI
 - **Database:** PostgreSQL (with Row Level Security)
 - **Containerization:** Docker / Docker Compose
@@ -29,6 +30,8 @@ For interview/review, follow this order:
 - [Consolidated Assessment Submission](docs/assessment-submission.md)
 
 ## Key Capabilities
+- Envoy L7 edge gateway with early JWT rejection, request tracing, path normalization, and local rate limiting
+- Zero Trust JWT validation at both Envoy and FastAPI; the application has no host-published port
 - Multi-tenant data isolation (JWT + PostgreSQL RLS)
 - Multi-entity-aware data model
 - Transaction/base-currency and exchange-rate data model
@@ -61,7 +64,9 @@ elimination, full FX processing, manual journals, and period-management APIs.
 the six required endpoints plus health, and asserts invoice totals, payment
 idempotency, aging, balanced journal entries, AR-to-GL reconciliation,
 transactional-outbox delivery, cross-tenant denial, RBAC denial, and
-idempotency-payload conflict handling.
+idempotency-payload conflict handling. It also verifies gateway JWT rejection,
+trace propagation, application network isolation, and independent FastAPI JWT
+validation.
 
 Detailed commands, database inspection queries, expected output, pg_cron
 verification, and an optional delivery-retry drill are in

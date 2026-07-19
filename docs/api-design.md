@@ -39,7 +39,7 @@ If-Match:            <version>                  ← concurrent write operations
 - Expires 24 hours
 - Stored in the idempotency_key table
 - Returned in POST responses for audit trail
-- Scoped by tenant_id + endpoint + key
+- Scoped by tenant_id + entity_id + endpoint + key
 - SHA-256 request hash detects reuse with a different payload
 
 Flow:
@@ -564,7 +564,7 @@ Duplicate prevention:
 ### Atomic Operations (ONE DB transaction)
 
 ```
-1. Claim unique (tenant_id, endpoint, idempotency_key) with request_hash
+1. Claim unique (tenant_id, entity_id, endpoint, idempotency_key) with request_hash
 2. Create payment and allocate invoices under serializable isolation
 3. Generate balanced GL journal entry
 4. Update invoice balances, statuses, and versions
@@ -648,6 +648,14 @@ Support team can trace any payment dispute to exact request.
 ```
 Debit:  1100 Cash    300000  ← money arrived
 Credit: 1200 AR      300000  ← debt cleared
+```
+
+For an INR 400,000 receipt against INR 300,000 outstanding:
+
+```text
+Debit:  1100 Cash             400000
+Credit: 1200 AR               300000
+Credit: 2100 Customer Credit  100000  ← unapplied liability
 ```
 
 **FX payment GL entries (if currency differs):**
@@ -782,13 +790,15 @@ Retrieves GL journal entries for an invoice.
 invoice_id is required. Other filters optional.
 Supports pagination for invoices with many entries.
 
-**Required role:** Any authenticated user of same entity. `auditor` role gets read-only access across all entities.
+**Required role:** Any authenticated user of the same entity. Cross-entity
+auditor access requires an explicit entity-membership model and is deferred;
+the prototype never treats a role claim alone as permission to cross entities.
 
 ### Request
 
 ```
 GET /api/v1/journal-entries
-    ?invoice_id=uuid-1001
+    ?invoice=uuid-1001
     &page=1
     &page_size=20
 Authorization: Bearer <jwt>
@@ -796,7 +806,7 @@ Authorization: Bearer <jwt>
 
 **Query Parameters:**
 ```
-invoice_id   ← REQUIRED primary filter
+invoice      ← REQUIRED primary filter (invoice ID)
 payment_id   ← optional additional filter
 from_date    ← optional date range start
 to_date      ← optional date range end
@@ -912,6 +922,11 @@ page_size    ← default 20, max 100
 
 **`balanced: true`** on every entry — debits always equal credits.
 If ever `false` → system RED alert, immediate investigation!
+
+Pagination applies only to `journal_entries`; `summary` always represents all
+journal entries for the invoice. Requests beyond `total_pages` return HTTP 200
+with an empty list, allowing clients to handle concurrent page navigation
+without treating it as a missing resource.
 
 ### Error Cases
 

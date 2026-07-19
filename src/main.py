@@ -62,7 +62,11 @@ app.add_middleware(
 # ============================================================
 @app.middleware("http")
 async def trace_id_middleware(request: Request, call_next):
-    trace_id = request.headers.get("X-Trace-ID", str(uuid.uuid4()))
+    trace_id = (
+        request.headers.get("X-Trace-ID")
+        or request.headers.get("X-Request-ID")
+        or str(uuid.uuid4())
+    )
     request.state.trace_id = trace_id
     response = await call_next(request)
     response.headers["X-Trace-ID"] = trace_id

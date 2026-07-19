@@ -16,6 +16,7 @@ GL_AR = "00000000-0000-0000-0000-000000000011"
 GL_TAX = "00000000-0000-0000-0000-000000000012"
 GL_REVENUE = "00000000-0000-0000-0000-000000000013"
 GL_FX = "00000000-0000-0000-0000-000000000014"
+GL_CUSTOMER_CREDIT = "00000000-0000-0000-0000-000000000015"
 PERIOD_ID = "00000000-0000-0000-0000-000000000020"
 
 
@@ -129,6 +130,14 @@ async def seed_data() -> None:
                     "account_code": "1200",
                     "account_name": "Accounts Receivable",
                     "account_type": "ASSET",
+                },
+                {
+                    "id": GL_CUSTOMER_CREDIT,
+                    "tenant_id": TENANT_ID,
+                    "entity_id": ENTITY_ID,
+                    "account_code": "2100",
+                    "account_name": "Customer Credit",
+                    "account_type": "LIABILITY",
                 },
                 {
                     "id": GL_TAX,

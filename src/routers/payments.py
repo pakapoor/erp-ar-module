@@ -34,6 +34,7 @@ router = APIRouter()
 
 # GL account codes for payment
 GL_CASH = "1100"          # Cash / Bank
+GL_CUSTOMER_CREDIT = "2100"  # Unapplied cash / customer overpayment liability
 GL_FX_GAIN_LOSS = "4300"  # FX Gain/Loss
 
 # Invoice statuses that can receive payment
@@ -104,6 +105,7 @@ async def get_exchange_rate(
 async def auto_allocate(
     db: AsyncSession,
     tenant_id: str,
+    entity_id: str,
     customer_id: str,
     payment_amount: Decimal,
 ) -> List[dict]:
@@ -116,6 +118,7 @@ async def auto_allocate(
         select(Invoice).where(
             and_(
                 Invoice.tenant_id == tenant_id,
+                Invoice.entity_id == entity_id,
                 Invoice.customer_id == customer_id,
                 Invoice.status.in_(PAYABLE_STATUSES),
                 Invoice.balance_amount > 0,
@@ -153,6 +156,7 @@ async def auto_allocate(
 async def manual_allocate(
     db: AsyncSession,
     tenant_id: str,
+    entity_id: str,
     customer_id: str,
     payment_amount: Decimal,
     allocation_items: list,
@@ -171,6 +175,7 @@ async def manual_allocate(
                 and_(
                     Invoice.id == item.invoice_id,
                     Invoice.tenant_id == tenant_id,
+                    Invoice.entity_id == entity_id,
                     Invoice.customer_id == customer_id,
                     Invoice.status.in_(PAYABLE_STATUSES),
                 )
@@ -216,9 +221,14 @@ async def create_payment(
         text("""
             SELECT
                 set_config('app.current_user_id', :user_id, true),
-                set_config('app.tenant_id', :tenant_id, true)
+                set_config('app.tenant_id', :tenant_id, true),
+                set_config('app.entity_id', :entity_id, true)
         """),
-        {"user_id": current_user.user_id, "tenant_id": current_user.tenant_id},
+        {
+            "user_id": current_user.user_id,
+            "tenant_id": current_user.tenant_id,
+            "entity_id": current_user.entity_id,
+        },
     )
 
     # ── Idempotency check ──────────────────────────────────
@@ -227,7 +237,7 @@ async def create_payment(
     ).hexdigest()
 
     existing = await check_idempotency(
-        db, x_idempotency_key, current_user.tenant_id,
+        db, x_idempotency_key, current_user.tenant_id, current_user.entity_id,
         "POST /payments", request_hash
     )
     if existing:
@@ -242,6 +252,7 @@ async def create_payment(
             and_(
                 Customer.id == payload.customer_id,
                 Customer.tenant_id == current_user.tenant_id,
+                Customer.entity_id == current_user.entity_id,
                 Customer.is_active == True,
             )
         )
@@ -282,7 +293,7 @@ async def create_payment(
 
     # ── Begin idempotency key ──────────────────────────────
     await create_idempotency_key(
-        db, x_idempotency_key, current_user.tenant_id,
+        db, x_idempotency_key, current_user.tenant_id, current_user.entity_id,
         "POST /payments", request_hash
     )
 
@@ -291,11 +302,12 @@ async def create_payment(
 
     if payload.allocation_mode == "AUTO":
         allocations, remaining = await auto_allocate(
-            db, current_user.tenant_id, payload.customer_id, payment_amount
+            db, current_user.tenant_id, current_user.entity_id,
+            payload.customer_id, payment_amount
         )
     else:
         allocations, remaining = await manual_allocate(
-            db, current_user.tenant_id, payload.customer_id,
+            db, current_user.tenant_id, current_user.entity_id, payload.customer_id,
             payment_amount, payload.allocations
         )
 
@@ -377,16 +389,35 @@ async def create_payment(
         select(GLAccount).where(
             and_(
                 GLAccount.entity_id == current_user.entity_id,
-                GLAccount.account_code.in_([GL_CASH, GL_AR, GL_FX_GAIN_LOSS]),
+                GLAccount.tenant_id == current_user.tenant_id,
+                GLAccount.account_code.in_([
+                    GL_CASH, GL_AR, GL_CUSTOMER_CREDIT, GL_FX_GAIN_LOSS,
+                ]),
             )
         )
     )
     gl_accounts = {gl.account_code: gl for gl in gl_result.scalars().all()}
 
+    required_accounts = {
+        GL_CASH: "Cash GL account (1100)",
+        GL_AR: "AR GL account (1200)",
+    }
+    if overpayment_amount > 0:
+        required_accounts[GL_CUSTOMER_CREDIT] = (
+            "Customer Credit liability GL account (2100)"
+        )
+    for account_code, account_label in required_accounts.items():
+        if account_code not in gl_accounts:
+            raise BusinessRuleException(
+                "GL_ACCOUNT_MISSING",
+                f"{account_label} not found for entity {current_user.entity_id}",
+            )
+
     # ── Generate GL journal entry ──────────────────────────
     # One GL entry for entire payment:
     # Debit  Cash        total_payment
-    # Credit AR          total_payment (- FX adjustment if any)
+    # Credit AR          allocated amount (- FX adjustment if any)
+    # Credit Customer Credit unapplied overpayment (liability)
     # Credit/Debit FX Gain/Loss (if multi-currency)
     total_fx = sum(
         Decimal(str(a["amount_allocated"])) *
@@ -411,21 +442,20 @@ async def create_payment(
     await db.flush()
 
     # DR: Cash
-    if GL_CASH in gl_accounts:
-        db.add(JournalEntryLine(
-            tenant_id=current_user.tenant_id,
-            journal_entry_id=journal_entry.id,
-            gl_account_id=gl_accounts[GL_CASH].id,
-            description="Cash received",
-            debit_amount=payment_amount,
-            credit_amount=Decimal("0"),
-            base_debit_amount=base_amount,
-            base_credit_amount=Decimal("0"),
-        ))
+    db.add(JournalEntryLine(
+        tenant_id=current_user.tenant_id,
+        journal_entry_id=journal_entry.id,
+        gl_account_id=gl_accounts[GL_CASH].id,
+        description="Cash received",
+        debit_amount=payment_amount,
+        credit_amount=Decimal("0"),
+        base_debit_amount=base_amount,
+        base_credit_amount=Decimal("0"),
+    ))
 
     # CR: AR (at original invoice rates)
     ar_credit = allocated_total - total_fx
-    if GL_AR in gl_accounts:
+    if ar_credit > 0:
         db.add(JournalEntryLine(
             tenant_id=current_user.tenant_id,
             journal_entry_id=journal_entry.id,
@@ -435,6 +465,21 @@ async def create_payment(
             credit_amount=ar_credit,
             base_debit_amount=Decimal("0"),
             base_credit_amount=ar_credit,
+        ))
+
+    # CR: Customer Credit — unapplied receipt remains a liability until it is
+    # refunded or allocated to a future invoice.
+    if overpayment_amount > 0:
+        base_overpayment_amount = overpayment_amount * exchange_rate
+        db.add(JournalEntryLine(
+            tenant_id=current_user.tenant_id,
+            journal_entry_id=journal_entry.id,
+            gl_account_id=gl_accounts[GL_CUSTOMER_CREDIT].id,
+            description="Customer overpayment held on account",
+            debit_amount=Decimal("0"),
+            credit_amount=overpayment_amount,
+            base_debit_amount=Decimal("0"),
+            base_credit_amount=base_overpayment_amount,
         ))
 
     # CR/DR: FX Gain/Loss (if applicable)
@@ -480,6 +525,7 @@ async def create_payment(
         db,
         x_idempotency_key,
         current_user.tenant_id,
+        current_user.entity_id,
         "POST /payments",
         201,
         response_body,
