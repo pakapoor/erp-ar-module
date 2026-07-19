@@ -80,7 +80,7 @@ one instead of silently expanding scope.
 | ID | Capability | Current position | Status | Decision / next action |
 |---|---|---|---|---|
 | B1 | Full multi-currency and exchange-rate handling | ECB ingestion, dual-currency posting and realized gain/loss implemented/tested | `COMPLETE` | Gain, loss, partial/final payment, stale rate and mixed-currency controls pass |
-| B2 | Intercompany invoicing and elimination | Schema/design only | `V2` | Review after B1; do not claim implementation |
+| B2 | Intercompany invoicing and elimination | Separate consolidation-ledger design documented; invoice schema has preparatory flags | `V2` | Match legal-entity entries, post audited elimination batches, and reconcile mismatches without rewriting entity books |
 | B3 | Revenue recognition schedules/deferred revenue | Point-in-time scope and deferred-revenue approach documented | `V2` | Over-time lines credit Deferred Revenue and use persisted schedules; Finance policy approval precedes implementation |
 | B4 | Odoo module or SAP integration patterns | FastAPI solution chosen | `NOT PLANNED` | Optional bonus; unrelated rewrite would weaken the submission |
 | B5 | Automated AR subledger-to-GL reconciliation | Health reconciliation implemented/tested | `COMPLETE` | Already earns the bonus at prototype scale |
@@ -122,7 +122,6 @@ the interview story separates prototype correctness from production readiness.
 
 Work through only one item at a time:
 
-1. `B2` — Intercompany decision
-2. `B6`–`B8` — Bonus endpoint verification/hardening; `B9` period-management decision
-3. `NFR2`–`NFR-B3` — Production-hardening decisions
-4. `SUB4`–`SUB5` — Candidate/final-submission completion
+1. `B6`–`B8` — Bonus endpoint verification/hardening; `B9` period-management decision
+2. `NFR2`–`NFR-B3` — Production-hardening decisions
+3. `SUB4`–`SUB5` — Candidate/final-submission completion

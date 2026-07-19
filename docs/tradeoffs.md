@@ -347,3 +347,28 @@ incorrect books. The tradeoff is narrower V1 product scope in exchange for an
 honest and financially safe prototype.
 
 ---
+
+## T17 — Intercompany Elimination: Entity Books vs Consolidation Ledger
+
+**Q: Where should intercompany elimination entries be posted?**
+
+| | Rewrite entity ledgers | Separate consolidation ledger |
+|--|--|--|
+| Legal-entity books | Distorted | Preserved |
+| Auditability | Original entries are obscured | Entity and elimination entries remain traceable |
+| Consolidated reporting | Simple but incorrect boundary | Explicit combination of entity plus elimination ledgers |
+| Operations | Fewer records | Matching and reconciliation workflow required |
+
+**Decision: Separate consolidation ledger in V2**
+
+The seller keeps Intercompany AR and Revenue; the buyer keeps Expense or Asset
+and Intercompany AP. V2 matches these entries and posts the inverse lines to a
+separate consolidation ledger, so group AR/AP and Revenue/Expense eliminate to
+zero without modifying statutory books.
+
+The accepted cost is a matching workflow, audited elimination batches and
+handling for currency or period mismatches. An unmatched pair is reported for
+reconciliation rather than silently eliminated. The prototype retains only
+preparatory invoice flags and does not claim consolidation implementation.
+
+---

@@ -232,7 +232,26 @@ allocation policy, schedule granularity, contract-modification/cancellation
 rules, period-close behavior and cumulative catch-up treatment. Deferring the
 code avoids presenting a simplistic monthly job as ASC 606/IFRS 15 compliance.
 
-## 11. Known Limits
+## 11. Intercompany Elimination — V2 Decision
+
+An intercompany invoice produces valid entries in two legal-entity ledgers:
+the seller records Intercompany AR and Revenue, while the buyer records an
+Expense or Asset and Intercompany AP. Those statutory entries are not netted or
+rewritten.
+
+V2 will match both sides through an intercompany transaction identifier and
+post elimination entries to a separate consolidation ledger. A consolidated
+report combines both entity ledgers and the elimination ledger, removing the
+internal AR/AP and Revenue/Expense without changing either entity's books.
+Unmatched amounts, currencies or periods enter a reconciliation workflow; they
+are not silently forced to balance.
+
+The existing `is_intercompany` and `receiver_entity_id` invoice fields are
+preparatory schema only. Matching, buyer-side AP integration, elimination
+batches, consolidation reporting and their controls are not implemented in the
+prototype.
+
+## 12. Known Limits
 
 - The integration suite verifies the required path, FX accounting, entity/tenant
   isolation, overpayment, stale versions, simultaneous approval, and real AUTO

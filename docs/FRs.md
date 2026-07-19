@@ -826,6 +826,12 @@ AR:              ₹10,00,000   ₹0           -₹10,00,000   ₹0
 AP:              ₹0           ₹10,00,000   -₹10,00,000   ₹0
 ```
 
+The seller and buyer journals remain unchanged in their legal-entity ledgers.
+V2 posts the four elimination lines to a separate consolidation ledger, linked
+to the matched intercompany transaction and reporting period. Consolidated
+reporting combines the entity ledgers with this elimination ledger; it never
+rewrites either entity's statutory books.
+
 **Intercompany Detection:**
 ```
 IF sender_entity_id AND receiver_entity_id
@@ -844,7 +850,9 @@ is_intercompany:   FALSE ✅
 ```
 
 ### Future Enhancements (Phase 2)
-- Intercompany reconciliation (Retail AR = Jio AP?)
+- Intercompany reconciliation and matching (Retail AR = Jio AP?)
+- Audited, idempotent elimination batches in a separate consolidation ledger
+- Mismatch workflow instead of silently eliminating unmatched balances
 - Transfer pricing compliance
 - Minority interest handling
 - Intercompany netting (offset AR vs AP between entities)
