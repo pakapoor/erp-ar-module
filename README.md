@@ -21,6 +21,7 @@ For interview/review, follow this order:
 - [High Level Design](docs/high-level-design.md)
 - [Data Model](docs/data-model.md)
 - [API Design](docs/api-design.md)
+- [Design Tradeoffs](docs/tradeoffs.md)
 - [Financial Controls](docs/financial-controls.md)
 - [Experience Showcase](docs/experience-showcase.md)
 
