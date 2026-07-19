@@ -163,6 +163,22 @@ async def seed_data() -> None:
                     "account_name": "FX Gain/Loss",
                     "account_type": "EXPENSE",
                 },
+                {
+                    "id": "00000000-0000-0000-0000-000000000015",
+                    "tenant_id": TENANT_ID,
+                    "entity_id": ENTITY_ID,
+                    "account_code": "4100",
+                    "account_name": "Bad Debt Expense",
+                    "account_type": "EXPENSE",
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000016",
+                    "tenant_id": TENANT_ID,
+                    "entity_id": ENTITY_ID,
+                    "account_code": "2100",
+                    "account_name": "Customer Credit",
+                    "account_type": "LIABILITY",
+                },
             ],
         )
 

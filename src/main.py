@@ -13,7 +13,7 @@ from src.exceptions import (
     PeriodClosedException,
     VersionConflictException,
 )
-from src.routers import invoices, payments, aging, journal_entries, health
+from src.routers import invoices, payments, aging, journal_entries, health, credit_memos
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -137,3 +137,4 @@ app.include_router(invoices.router, prefix="/api/v1", tags=["Invoices"])
 app.include_router(payments.router, prefix="/api/v1", tags=["Payments"])
 app.include_router(aging.router, prefix="/api/v1", tags=["AR Aging"])
 app.include_router(journal_entries.router, prefix="/api/v1", tags=["Journal Entries"])
+app.include_router(credit_memos.router, prefix="/api/v1", tags=["Credit Memos"])
