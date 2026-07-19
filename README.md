@@ -46,12 +46,15 @@ For interview/review, follow this order:
 - Transactional invoice-delivery outbox with retrying Docker worker
 - pg_cron-scheduled ECB rate ingestion with durable jobs, provenance and seven
   approved foreign→INR pairs
+- Foreign-currency invoice/payment posting with locked rates and realized FX
+  gain/loss in INR base-currency books
 
 Designed but deferred from the required prototype: production email/EDI/IRP
 delivery adapters, credit memos, write-offs, void/reissue, intercompany
-elimination, manual journals, and period-management APIs. Full FX processing is
-currently `IN PROGRESS`; its approved scope and acceptance tests are documented
-in [FX Rate and Multi-Currency Design](docs/fx-rate-design.md).
+elimination, manual journals, period-management APIs, cross-currency settlement
+and unrealized period-end FX revaluation. The completed V1 FX scope and its
+acceptance tests are documented in
+[FX Rate and Multi-Currency Design](docs/fx-rate-design.md).
 
 ## API Endpoints
 | Method | Endpoint | Description |

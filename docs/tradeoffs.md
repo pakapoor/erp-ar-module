@@ -296,7 +296,9 @@ financial transaction to a live provider?**
 | Tenant policy | Copy approved rates into tenant scope | Allows tenant provider/type/manual overrides | Duplicate small reference dataset |
 | V1 settlement | Payment currency must equal invoice currency | Demonstrates correct realized FX with bounded complexity | Cross-currency settlement deferred |
 | Currency scope | INR, USD, EUR, CNY, GBP, JPY, CHF, CAD | Bounded validation and test matrix | New currencies require configuration/testing |
-| Testing | Recorded ECB fixture plus optional live contract smoke test | Deterministic offline financial tests | Default suite does not prove live availability |
+| Dual representation | Journal lines retain document amounts and INR base amounts | Original document remains explainable while legal books reconcile | Wider API and more rounding controls |
+| Realized-FX line | FX line is base-only; transaction debit/credit remain zero | Avoids mixing INR differences into USD document columns | Requires an explicit DB constraint for base-only lines |
+| Testing | Recorded ECB fixtures plus optional live contract smoke test | Deterministic gain, loss, partial and failure tests | Default suite does not prove live availability |
 
 The system prioritizes consistency over availability: a missing/stale foreign
 rate returns `FX_RATE_UNAVAILABLE`; it never substitutes 1.0. Invoice approval

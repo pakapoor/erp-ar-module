@@ -60,13 +60,16 @@ Full schema begins in [migrations/001_initial_schema.sql](../migrations/001_init
 the delivery outbox is added by
 [migrations/004_delivery_outbox.sql](../migrations/004_delivery_outbox.sql), and
 the FX import/provenance foundation by
-[migrations/006_fx_rate_ingestion.sql](../migrations/006_fx_rate_ingestion.sql).
+[migrations/006_fx_rate_ingestion.sql](../migrations/006_fx_rate_ingestion.sql),
+base-currency aging by migration 007, and base-only realized-FX journal lines
+by migration 008.
 
-The approved in-progress FX extension is specified in
+The completed V1 FX extension is specified in
 [FX Rate Ingestion and Multi-Currency Design](fx-rate-design.md). Migration 006
 implements `fx_import_job`, rate provenance/approval fields, immutable
-supersession, and transaction-to-rate references. Financial API integration
-remains in progress.
+supersession, and transaction-to-rate references. APIs snapshot transaction and
+base values; payment allocations retain payment-rate value, AR carrying value
+and the resulting realized gain/loss.
 
 Key design decisions in the schema:
 - UUID primary keys on all tables
@@ -85,7 +88,10 @@ Key design decisions in the schema:
   historical reporting requires event reconstruction or persisted snapshots
 - Foreign-currency documents snapshot both the approved rate ID and numeric
   rate; approved rate corrections insert a superseding row rather than changing
-  historical transactions (storage implemented; API usage in progress)
+  historical transactions
+- Journal lines retain both document and base amounts. A realized-FX line may
+  be base-only (zero on both document sides) but must have exactly one positive
+  base debit/credit side; migration 008 enforces this shape
 
 ---
 

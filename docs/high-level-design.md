@@ -131,6 +131,7 @@ derivation, posting examples, failure rules and test acceptance criteria.
   - Credit Customer Credit liability for any unapplied overpayment
   - + FX Gain/Loss line if multi-currency
 - Payment allocation detail stored in payment_allocation table
+- Realized FX is base-currency only; document-currency Cash and AR still balance
 - Defence in depth: idempotency key + UNIQUE(tenant_id, customer_id, payment_reference)
 - Result: 201 + allocations + journal_entry_id
 

@@ -519,6 +519,8 @@ Content-Type: application/json
   "payment_date": "2024-01-31",
   "amount": 300000,
   "currency": "INR",
+  "base_amount": 300000,
+  "base_currency": "INR",
   "payment_method": "RTGS",
   "allocation_mode": "AUTO",
   "allocations": null
@@ -618,30 +620,41 @@ Crash after commit  → retry replays cached response
       "amount_allocated": 174000,
       "invoice_balance_before": 174000,
       "invoice_balance_after": 0,
-      "invoice_status": "PAID"
+      "invoice_status": "PAID",
+      "base_payment_amount": 174000,
+      "base_ar_amount": 174000,
+      "fx_gain_loss": 0
     },
     {
       "invoice_id": "uuid-1002",
       "amount_allocated": 80000,
       "invoice_balance_before": 80000,
       "invoice_balance_after": 0,
-      "invoice_status": "PAID"
+      "invoice_status": "PAID",
+      "base_payment_amount": 80000,
+      "base_ar_amount": 80000,
+      "fx_gain_loss": 0
     },
     {
       "invoice_id": "uuid-1003",
       "amount_allocated": 46000,
       "invoice_balance_before": 46000,
       "invoice_balance_after": 0,
-      "invoice_status": "PAID"
+      "invoice_status": "PAID",
+      "base_payment_amount": 46000,
+      "base_ar_amount": 46000,
+      "fx_gain_loss": 0
     }
   ],
   "allocated_amount": 300000,
   "unallocated_amount": 0,
   "overpayment_amount": 0,
   "overpayment_action": null,
+  "exchange_rate_id": null,
   "exchange_rate_used": 1.0,
   "exchange_rate_date": "2024-01-31",
   "exchange_rate_warning": null,
+  "realized_fx_gain_loss": 0,
   "journal_entry_id": "uuid-JE002",
   "created_at": "2024-01-31T14:00:00Z"
 }
@@ -682,12 +695,16 @@ Credit: 1200 AR               300000
 Credit: 2100 Customer Credit  100000  ← unapplied liability
 ```
 
-**FX payment GL entries (same foreign transaction currency, different date rates):**
-```
-Debit:  1100 Cash          86000  ← actual cash (at payment rate)
-Credit: 1200 AR            83000  ← original invoice amount (at invoice rate)
-Credit: 4300 FX Gain/Loss   3000  ← difference
-```
+**FX payment GL entries (USD document, INR legal books):**
+
+| Account | USD debit | USD credit | INR debit | INR credit |
+|---|---:|---:|---:|---:|
+| 1100 Cash | 1,000 | 0 | 86,000 | 0 |
+| 1200 AR | 0 | 1,000 | 0 | 83,000 |
+| 4300 FX Gain/Loss | 0 | 0 | 0 | 3,000 |
+
+The realized-FX line is base-only. Recording INR 3,000 in a USD transaction
+column would mix units and make the document-currency journal meaningless.
 
 ### Error Cases
 

@@ -590,9 +590,9 @@ ERP: WHERE tenant_id=X AND entity_id=Y
 
 ## FR8 — Multi-currency
 
-**Implementation status:** `IN PROGRESS` — ingestion migration, daily schedule,
-live ECB worker and deterministic feed tests are complete; invoice/payment FX
-accounting and end-to-end tests remain. See
+**Implementation status:** `COMPLETE` for V1 — ingestion, invoice/payment rate
+snapshots, base-currency journals, realized gain/loss, partial payments and
+fail-closed tests are implemented. See
 [FX Rate Ingestion and Multi-Currency Design](fx-rate-design.md).
 
 V1 supports INR, USD, EUR, CNY, GBP, JPY, CHF and CAD. Exchange rates are
