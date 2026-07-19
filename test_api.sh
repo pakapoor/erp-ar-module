@@ -121,6 +121,21 @@ API3_RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/
 pretty_print "$API3_RESPONSE"
 assert_json "$API3_RESPONSE" 'data["status"] == "APPROVED" and data["version"] == 2' "API3 approves with optimistic version increment"
 
+# Approval and its PENDING outbox row commit atomically. The separate worker
+# should deliver the event and update its durable state shortly afterward.
+DELIVERY_STATUS=""
+for _ in 1 2 3 4 5; do
+  DELIVERY_STATUS="$(docker compose exec -T db psql -U erp_user -d erp_db -Atc \
+    "SELECT status FROM delivery_outbox WHERE invoice_id='$INVOICE_ID' AND event_type='INVOICE_APPROVED';")"
+  [ "$DELIVERY_STATUS" = "DELIVERED" ] && break
+  sleep 2
+done
+if [ "$DELIVERY_STATUS" != "DELIVERED" ]; then
+  echo "FAIL: invoice delivery outbox was not delivered (status=$DELIVERY_STATUS)" >&2
+  exit 1
+fi
+echo "PASS: approval outbox event was delivered by the separate worker"
+
 echo "=== API4: POST /payments ==="
 API4_RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/payments" \
   -H "Content-Type: application/json" \

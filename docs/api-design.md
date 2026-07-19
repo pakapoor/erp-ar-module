@@ -412,8 +412,9 @@ Content-Type: application/json
     Credit: 2200 Tax Payable   24000
 8.  Update invoice status → APPROVED
 9.  Increment version (1 → 2)
-10. Mark idempotency key COMPLETED
-11. Write audit log
+10. Insert PENDING invoice-delivery outbox event
+11. Mark idempotency key COMPLETED
+12. Write audit log
 ```
 
 ### Response — HTTP 200 OK
@@ -426,12 +427,19 @@ Content-Type: application/json
   "approved_by": "priya-uuid",
   "approved_at": "2024-01-15T10:00:00Z",
   "notes": "Approved after tax jurisdiction correction",
-  "journal_entry_id": "uuid-JE001"
+  "journal_entry_id": "uuid-JE001",
+  "delivery_status": "QUEUED"
 }
 ```
 
 Minimal response — client already has full invoice from GET.
 Full details available via GET /invoices/{id} with new version.
+
+After commit, a separate worker claims the event using `FOR UPDATE SKIP LOCKED`
+and calls the delivery stub with the outbox event ID as an idempotency key.
+Failures retry with backoff without rolling back approval. Successful delivery
+records `sent_at` and transitions APPROVED to SENT; a later payment status is
+never overwritten.
 
 ### Error Cases
 
@@ -517,10 +525,9 @@ Content-Type: application/json
 
 ### Validations
 
-The prototype does not implement invoice delivery. Approval establishes the
-receivable, so both allocation modes accept invoices in `APPROVED`, `SENT`, or
-`PARTIALLY_PAID` status. `SENT` remains part of the production lifecycle for a
-future delivery subsystem.
+Approval establishes the receivable, so both allocation modes accept invoices
+in `APPROVED`, `SENT`, or `PARTIALLY_PAID` status. This also permits payment
+while asynchronous delivery is pending or being retried.
 
 ```
 Customer:

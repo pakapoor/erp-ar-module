@@ -4,9 +4,9 @@
 
 This prototype implements the six APIs required by the assessment and demonstrates one complete financial path: create an invoice, retrieve it, approve it, generate the receivable GL entry, apply a partial payment, report aging, and retrieve the resulting journal trail.
 
-The architecture is a modular monolith implemented with FastAPI and PostgreSQL. This keeps invoice, payment, allocation, audit, and GL changes within one ACID transaction. The application is stateless and runs with a delivery/JWKS stub under Docker Compose.
+The architecture is a modular monolith implemented with FastAPI and PostgreSQL. This keeps invoice, payment, allocation, audit, GL, and delivery-outbox writes within ACID transaction boundaries. The application is stateless and runs with a delivery/JWKS stub plus an outbox worker under Docker Compose.
 
-Production extensions—including delivery, credit memos, void/reissue, write-off, intercompany elimination, full FX processing, manual journals, and period-management APIs—are designed but not represented as completed prototype features.
+Production delivery adapters (Email/EDI/IRP), credit memos, void/reissue, write-off, intercompany elimination, full FX processing, manual journals, and period-management APIs are designed but not represented as completed prototype features. The durable delivery outbox, retrying worker, and console stub are implemented.
 
 ## 2. Data Model and Architecture
 
@@ -22,6 +22,7 @@ Core entities:
 - GLAccount, JournalEntry, and JournalEntryLine form the accounting trail.
 - AccountingPeriod controls posting dates.
 - IdempotencyKey and AuditLog provide operational and compliance controls.
+- DeliveryOutbox durably bridges the approval transaction to asynchronous delivery.
 
 ### Tenant and entity isolation
 
@@ -68,11 +69,12 @@ Implemented transitions:
 
 ```text
 DRAFT --authorized approval--> APPROVED
+APPROVED --successful asynchronous delivery--> SENT
 APPROVED/SENT/PARTIALLY_PAID --partial payment--> PARTIALLY_PAID
 APPROVED/SENT/PARTIALLY_PAID --full payment--> PAID
 ```
 
-Approval requires a separate approver, an OPEN document-date period, an idempotency key, and the current invoice version through `If-Match`. Approval and payment create their GL entries atomically. SENT is optional in the prototype because delivery is outside scope; approval establishes the receivable.
+Approval requires a separate approver, an OPEN document-date period, an idempotency key, and the current invoice version through `If-Match`. Approval and payment create their GL entries atomically. Approval also writes a delivery outbox event in the same transaction; the worker later records SENT without making notification success a prerequisite for the receivable.
 
 ## 5. API Design and Verification
 
@@ -119,7 +121,7 @@ Detailed analysis is in [Financial Controls and Compliance Analysis](financial-c
 - Application plus database OPEN-period checks.
 - Database-triggered audit with actor context.
 - AR-to-GL reconciliation surfaced operationally.
-- Point-in-time recovery, restore drills, backward-compatible migrations, and transactional outbox recommended for production.
+- Point-in-time recovery, restore drills, and backward-compatible migrations; the implemented transactional outbox is the base for production delivery adapters.
 
 ## 7. Enterprise Experience
 
@@ -140,5 +142,5 @@ The project was expanded beyond the original 3–4 hour timebox as an interactiv
 - The integration suite verifies the required happy path and selected security/idempotency failures, but not a comprehensive concurrency matrix.
 - RLS needs a non-owner runtime role plus `FORCE ROW LEVEL SECURITY` for production-grade defense in depth.
 - Journal immutability and aggregate balancing need database privilege/constraint enforcement.
-- The stock local PostgreSQL image does not schedule pg_cron; the integration test refreshes aging explicitly. Deployment design selects a single scheduled refresh owner.
+- The custom PostgreSQL image loads pg_cron. One job owned by the `postgres` system database refreshes `erp_db.ar_aging` concurrently every five minutes; the integration test also refreshes explicitly for deterministic assertions.
 - Full multi-currency, overpayment liability, intercompany, amendment, and period-management workflows are deferred.

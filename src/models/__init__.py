@@ -14,5 +14,6 @@ from src.models.models import (
     JournalEntryLine,
     CreditMemo,
     IdempotencyKey,
+    DeliveryOutbox,
     AuditLog,
 )

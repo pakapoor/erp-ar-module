@@ -155,7 +155,7 @@ Collections team reviews aging once daily — 5 min staleness acceptable. Redis 
 | Production viable | Mid-scale | K8s CronJob | Mid-market |
 
 **Decision: pg_cron**
-pg_cron runs inside PostgreSQL — no separate container, no duplication risk across AR App instances. Refresh every 5 minutes acceptable for collections team. Production at enterprise scale → K8s CronJob or AWS EventBridge.
+pg_cron runs once inside PostgreSQL — no separate scheduler container and no duplication across AR App instances. Its metadata lives in the `postgres` system database and the job targets `erp_db`. `REFRESH MATERIALIZED VIEW CONCURRENTLY` keeps the previous complete snapshot readable while rebuilding; the unique `(tenant_id, entity_id, customer_id)` index makes that possible. Refresh every 5 minutes is acceptable for the collections team. Production at enterprise scale → K8s CronJob or AWS EventBridge.
 
 ---
 
@@ -179,16 +179,15 @@ NFR2 requires < 100ms — live JOIN with indexes achieves this. Invoice detail s
 
 **Q: How to deliver invoices to customers?**
 
-| | Direct HTTP to stub | Transactional Outbox + SQS | Direct SQS |
+| | Direct HTTP to stub | PostgreSQL outbox + worker | Direct SQS |
 |--|--|--|--|
-| Prototype complexity | Simple | High | Medium |
-| Atomicity | Not atomic | Atomic | Not atomic |
-| Production ready | No | Yes | Partial |
-| Extra infra | None | Queue + worker | SQS |
+| Prototype complexity | Simple | Medium | Medium |
+| Approval/event atomicity | No | Yes | No |
+| Retry after process crash | Fragile | Durable | Durable after publish |
+| Extra infra | None | Worker; existing DB | SQS |
 
-**Decision: Direct HTTP to stub (prototype)**
-**Production: Transactional Outbox → SQS → Email/EDI/IRP**
-Prototype runs on Docker locally — stub FastAPI service logs invoices to console. Production needs atomicity: save invoice + queue delivery in same transaction.
+**Decision: PostgreSQL transactional outbox + worker**
+Approval, GL entries, idempotency result, and a PENDING delivery event commit in one transaction. A separate Docker worker uses `FOR UPDATE SKIP LOCKED`, calls the stub, and retries with exponential backoff; exhausted events become DEAD for operational intervention. Delivery is at-least-once, so the stable outbox event ID is sent as the downstream idempotency key. Production can retain the outbox and publish to SQS before Email/EDI/IRP adapters.
 
 ---
 

@@ -1,7 +1,10 @@
 services:
 
   db:
-    image: postgres:16
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+    image: erp-ar-postgres:16-pgcron
     container_name: erp_db
     environment:
       POSTGRES_USER: erp_user
@@ -42,6 +45,23 @@ services:
     ports:
       - "9000:9000"
     command: uvicorn stub:app --host 0.0.0.0 --port 9000 --reload
+
+  delivery_worker:
+    build: .
+    container_name: erp_delivery_worker
+    environment:
+      DATABASE_URL: postgresql://erp_user:erp_password@db:5432/erp_db
+      DELIVERY_SERVICE_URL: http://stub:9000
+      OUTBOX_POLL_INTERVAL_SECONDS: 2
+    depends_on:
+      db:
+        condition: service_healthy
+      stub:
+        condition: service_started
+    volumes:
+      - ./src:/app/src
+    command: python -m src.delivery_worker
+    restart: unless-stopped
 
 volumes:
   postgres_data:

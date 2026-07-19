@@ -37,10 +37,11 @@ For interview/review, follow this order:
 - Idempotent write APIs with cached retry responses
 - Database-triggered audit trail with actor context
 - Application and database period-posting controls
+- Transactional invoice-delivery outbox with retrying Docker worker
 
-Designed but deferred from the required prototype: delivery, credit memos,
-write-offs, void/reissue, intercompany elimination, full FX processing, manual
-journals, and period-management APIs.
+Designed but deferred from the required prototype: production email/EDI/IRP
+delivery adapters, credit memos, write-offs, void/reissue, intercompany
+elimination, full FX processing, manual journals, and period-management APIs.
 
 ## API Endpoints
 | Method | Endpoint | Description |
@@ -58,7 +59,8 @@ journals, and period-management APIs.
 `test_api.sh` seeds deterministic data, creates fresh development JWTs, tests
 the six required endpoints plus health, and asserts invoice totals, payment
 idempotency, aging, balanced journal entries, AR-to-GL reconciliation,
-cross-tenant denial, RBAC denial, and idempotency-payload conflict handling.
+transactional-outbox delivery, cross-tenant denial, RBAC denial, and
+idempotency-payload conflict handling.
 
 ## Time Tracking
 

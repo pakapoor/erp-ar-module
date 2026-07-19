@@ -9,7 +9,7 @@ Production replacement:
 """
 import logging
 from datetime import datetime
-from fastapi import FastAPI
+from fastapi import FastAPI, Header
 from pydantic import BaseModel
 from typing import Optional
 
@@ -41,11 +41,15 @@ class JWKSKey(BaseModel):
 # Called by AR App after invoice approval (async, non-blocking)
 # ============================================================
 @app.post("/stub/send-invoice")
-async def receive_invoice(payload: InvoiceDeliveryPayload):
+async def receive_invoice(
+    payload: InvoiceDeliveryPayload,
+    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
+):
     logger.info(
         f"\n{'='*50}\n"
         f"📧 INVOICE DELIVERY STUB\n"
         f"Invoice ID:  {payload.invoice_id}\n"
+        f"Delivery ID: {x_idempotency_key or 'N/A'}\n"
         f"Customer:    {payload.customer_id}\n"
         f"Email:       {payload.customer_email or 'N/A'}\n"
         f"Amount:      {payload.total_amount} {payload.currency}\n"

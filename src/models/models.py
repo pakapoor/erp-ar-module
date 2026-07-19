@@ -467,6 +467,35 @@ class IdempotencyKey(Base):
 
 
 # ============================================================
+# DELIVERY OUTBOX
+# ============================================================
+class DeliveryOutbox(Base):
+    __tablename__ = "delivery_outbox"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenant.id"), nullable=False)
+    entity_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("entity.id"), nullable=False)
+    invoice_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("invoice.id"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("invoice_id", "event_type", name="delivery_outbox_event_unique"),
+        Index("idx_delivery_outbox_claim", "status", "next_attempt_at", "created_at"),
+        Index("idx_delivery_outbox_tenant", "tenant_id"),
+    )
+
+
+# ============================================================
 # AUDIT LOG
 # ============================================================
 class AuditLog(Base):

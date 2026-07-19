@@ -64,7 +64,7 @@ DRAFT -> APPROVED -> SENT -> PARTIALLY_PAID -> PAID
 APPROVED/SENT/PARTIALLY_PAID -> WRITTEN_OFF
 ```
 
-The prototype implements DRAFT creation, approval, and payment-driven PARTIALLY_PAID/PAID transitions. Because delivery is outside the required prototype scope, payments are allowed against APPROVED as well as SENT invoices.
+The prototype implements DRAFT creation, approval, asynchronous delivery to SENT, and payment-driven PARTIALLY_PAID/PAID transitions. Payments are allowed against APPROVED as well as SENT invoices because approval establishes the receivable and delivery may still be retrying.
 
 An approved invoice must not be edited in place. Corrections should use:
 
@@ -146,7 +146,7 @@ Production PostgreSQL should use encrypted automated snapshots plus continuous W
 
 If an application instance fails before commit, PostgreSQL rolls back payment, allocations, balance changes, journal lines, audit rows, and the idempotency claim. The client retries with the same key. If failure occurs after commit but before the response arrives, the retry reads and returns the cached committed response without applying the payment again.
 
-External delivery should not occur inside the financial transaction. Production uses a transactional outbox committed with the invoice/payment, followed by an idempotent worker and dead-letter handling.
+External delivery does not occur inside the financial transaction. Approval commits a transactional outbox row with the invoice and GL entry. A separate idempotent worker retries delivery afterward; exhausted events enter DEAD status for operational handling. Therefore delivery failure never reverses a committed financial transaction.
 
 ## 7. Prototype Evidence
 

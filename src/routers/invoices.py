@@ -15,7 +15,8 @@ from src.auth import CurrentUser, get_current_user, require_role
 from src.models import (
     Invoice, InvoiceLineItem, Customer, AccountingPeriod,
     JournalEntry, JournalEntryLine, GLAccount,
-    IdempotencyKey, AuditLog, PaymentAllocation, Payment, CreditMemo
+    IdempotencyKey, DeliveryOutbox, AuditLog,
+    PaymentAllocation, Payment, CreditMemo
 )
 from src.schemas import (
     InvoiceCreate, InvoiceResponse, InvoiceApprove,
@@ -438,10 +439,12 @@ async def get_invoice(
     )
     status_history = []
     for log in audit_result.scalars().all():
-        if log.new_value and "status" in log.new_value:
+        old_status = (log.old_value or {}).get("status")
+        new_status = (log.new_value or {}).get("status")
+        if new_status and new_status != old_status:
             status_history.append({
-                "status": log.new_value["status"],
-                "changed_by": str(log.changed_by),
+                "status": new_status,
+                "changed_by": str(log.changed_by) if log.changed_by else "system",
                 "changed_at": log.changed_at.isoformat(),
             })
 
@@ -675,6 +678,34 @@ async def approve_invoice(
     invoice.version += 1
     invoice.updated_at = now
 
+    # The outbox event commits atomically with approval and its GL entry.
+    # Delivery itself happens after commit in a separate worker.
+    customer_result = await db.execute(
+        select(Customer).where(
+            and_(
+                Customer.id == invoice.customer_id,
+                Customer.tenant_id == current_user.tenant_id,
+            )
+        )
+    )
+    customer = customer_result.scalar_one()
+    delivery_event = DeliveryOutbox(
+        tenant_id=current_user.tenant_id,
+        entity_id=current_user.entity_id,
+        invoice_id=invoice.id,
+        event_type="INVOICE_APPROVED",
+        payload={
+            "invoice_id": str(invoice.id),
+            "customer_id": str(invoice.customer_id),
+            "customer_email": customer.email,
+            "tenant_id": str(current_user.tenant_id),
+            "total_amount": str(invoice.total_amount),
+            "currency": invoice.transaction_currency,
+            "due_date": str(invoice.due_date),
+        },
+    )
+    db.add(delivery_event)
+
     await db.flush()
 
     # ── Build response ─────────────────────────────────────
@@ -686,6 +717,7 @@ async def approve_invoice(
         "approved_at": invoice.approved_at.isoformat(),
         "notes": payload.notes,
         "journal_entry_id": journal_entry.id,
+        "delivery_status": "QUEUED",
     }
 
     await complete_idempotency_key(

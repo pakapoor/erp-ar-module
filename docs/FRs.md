@@ -143,9 +143,9 @@ Status: Draft → Approved ✅
 
 ## FR3 — Invoice Sending
 
-**Production extension — outside the required prototype API scope.**
+**Prototype extension implemented asynchronously after approval.**
 
-After approval, invoice status transitions to Sent when delivered to customer. System records sent timestamp and delivery confirmation. The prototype does not implement delivery; it may record payments against invoices in APPROVED, SENT, or PARTIALLY_PAID status because approval establishes the receivable.
+Approval atomically inserts a PostgreSQL outbox event. A separate worker delivers it to the console stub, retries transient failures, records `sent_at`, and transitions APPROVED to SENT. Payment remains valid while delivery is pending because approval—not notification—establishes the receivable. Production replaces the stub with idempotent Email/EDI/IRP adapters.
 
 ```
 POST /invoices/{id}/send

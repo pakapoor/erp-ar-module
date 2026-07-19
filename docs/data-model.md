@@ -37,6 +37,7 @@
 | Credit Memo | Correction document against an invoice |
 | AR Aging (materialized view) | Current derived snapshot by tenant, entity, and customer; refreshed every 5 minutes |
 | Idempotency Key | Tenant- and endpoint-scoped write claim with request hash and cached response |
+| Delivery Outbox | Durable invoice-delivery event committed atomically with approval and claimed by workers |
 
 ---
 
@@ -54,8 +55,9 @@
 
 ## Table Schemas
 
-Full schema with all constraints, indexes, and RLS policies:
-[migrations/001_initial_schema.sql](../migrations/001_initial_schema.sql)
+Full schema begins in [migrations/001_initial_schema.sql](../migrations/001_initial_schema.sql);
+the delivery outbox is added by
+[migrations/004_delivery_outbox.sql](../migrations/004_delivery_outbox.sql).
 
 Key design decisions in the schema:
 - UUID primary keys on all tables
@@ -68,6 +70,8 @@ Key design decisions in the schema:
   preserving the original document date
 - Idempotency keys table prevents duplicate writes and safely replays completed
   responses; payment references provide a second database uniqueness guard
+- Delivery outbox provides atomic approval/event persistence, multi-worker safe
+  claims, retry state, and a stable downstream idempotency identifier
 - AR Aging as a current-only materialized view — refreshed every 5 minutes;
   historical reporting requires event reconstruction or persisted snapshots
 

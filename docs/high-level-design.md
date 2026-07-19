@@ -15,6 +15,9 @@ Modular monolith architecture for prototype. All components run in Docker on a s
 Core request flow:
 Client → L7 API Gateway → AR Application (FastAPI) → PostgreSQL
 
+Asynchronous delivery flow:
+AR approval transaction → PostgreSQL delivery_outbox → Outbox Worker → Delivery Stub
+
 Key decisions:
 - L7 Gateway: JWT signature check only — stateless, no header extraction
 - AR Application: re-validates JWT independently (Zero Trust)
@@ -23,9 +26,8 @@ Key decisions:
 - Optimistic locking: version column prevents ABA problem
 - Audit triggers: DB-level, cannot be bypassed by application code
 - Period close: enforced at both app and DB trigger level
-- pg_cron: selected deployment design for the 5-minute MV refresh; the local
-  prototype uses the stock PostgreSQL image and refreshes explicitly in the
-  integration test
+- pg_cron: runs once inside PostgreSQL and refreshes the aging MV concurrently
+  every 5 minutes; readers retain the previous complete snapshot during refresh
 
 ---
 
@@ -77,8 +79,11 @@ API flows shown in diagram:
   - Debit  Accounts Receivable  total_amount
   - Credit Sales Revenue        subtotal_amount
   - Credit Tax Payable          tax_amount
+- PENDING delivery_outbox event saved in that same transaction
+- Separate worker claims events with FOR UPDATE SKIP LOCKED, calls the delivery
+  stub after commit, retries failures, and records sent_at after success
 - Audit trigger fires automatically
-- Result: 200, status=APPROVED, version+1, journal_entry_id returned
+- Result: 200, status=APPROVED, version+1, journal_entry_id, delivery_status=QUEUED
 
 ### ④ POST /payments (FR4, FR11)
 - Required role: payment_recorder
@@ -99,7 +104,7 @@ API flows shown in diagram:
 - 5 minute staleness acceptable — collections team reviews once daily
 - as_of timestamp shown in response (explicit staleness)
 - Deployment target: MV refreshed by pg_cron every 5 minutes inside PostgreSQL
-- Local prototype: test performs an explicit refresh; live fallback handles a missing MV row
+- Integration test also refreshes explicitly for deterministic assertions; live fallback handles a missing MV row
 - No Redis, no external cache — consistent with no-Redis decision
 - Result: 200 + aging buckets + as_of timestamp
 
