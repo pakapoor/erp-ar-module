@@ -80,7 +80,7 @@ acceptance tests are documented in
 
 ## Verification
 
-`test_api.sh` seeds deterministic data, creates fresh development JWTs, tests
+`tests/integration/test_api.sh` seeds deterministic data, creates fresh development JWTs, tests
 the six required endpoints plus health, and asserts invoice totals, payment
 idempotency, aging, balanced journal entries, AR-to-GL reconciliation,
 transactional-outbox delivery, cross-tenant denial, RBAC denial, and
@@ -88,20 +88,24 @@ idempotency-payload conflict handling. It also verifies gateway JWT rejection,
 trace propagation, application network isolation, and independent FastAPI JWT
 validation.
 
-`test_payment_concurrency.sh` independently races two distinct full receipts
+`tests/concurrency/test_payment_concurrency.sh` independently races two distinct full receipts
 through both AUTO and MANUAL allocation. Exactly one transaction commits and
 the loser receives retryable HTTP 409 without leaving partial financial data.
 
-`test_credit_memo.sh` verifies B6 entity isolation, idempotent replay and
+`tests/integration/test_credit_memo.sh` verifies B6 entity isolation, idempotent replay and
 changed-payload rejection, concurrent over-credit prevention, paid and
 partially-paid liability handling, USD/INR accounting, API6 visibility,
 balanced journals, and final AR-to-GL reconciliation. Basic draft-void and
-write-off paths remain in `test_api.sh`; their extended matrices are pending.
+write-off paths remain in `tests/integration/test_api.sh`; their extended matrices are pending.
 
-`test_delivery_sqs.sh` proves the full approval → transactional outbox → SQS →
+`tests/integration/test_delivery_sqs.sh` proves the full approval → transactional outbox → SQS →
 delivery path, tenant/entity isolation, downstream deduplication, three-attempt
 DLQ redrive, preservation of committed financial records during a delivery
 outage, and CFO recovery of a DEAD event.
+
+Run `./tests/run_coverage.sh` for statement and branch coverage of the Python
+unit suite. Coverage is reported separately from the shell-driven integration
+evidence so the reported percentage is not misleading.
 
 Detailed commands, database inspection queries, expected output, pg_cron
 verification, and an optional delivery-retry drill are in
@@ -128,10 +132,12 @@ erp-ar-module/
 ├── Dockerfile                   FastAPI and worker runtime image
 ├── docker-compose.yml           Local eight-service deployment
 ├── deploy.sh                    Safe build, migration, startup and verification
-├── test_api.sh                  Repeatable API/control integration suite
-├── test_payment_concurrency.sh  AUTO/MANUAL payment race controls
-├── test_credit_memo.sh          B6 accounting and concurrency controls
-├── test_delivery_sqs.sh         SQS, DLQ, deduplication and retry controls
+├── .coveragerc                  Python statement and branch coverage settings
+├── tests/
+│   ├── run_coverage.sh          Unit-test coverage report
+│   ├── unit/                    Python unit tests
+│   ├── integration/             API, accounting and SQS integration suites
+│   └── concurrency/             Concurrent payment race tests
 ├── gateway/
 │   └── envoy.yaml               Public L7 gateway, JWT, tracing and rate limits
 ├── database/

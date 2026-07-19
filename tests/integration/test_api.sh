@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$PROJECT_DIR"
+
 BASE_URL="${BASE_URL:-http://localhost:8000}"
 TENANT_ID="00000000-0000-0000-0000-000000000001"
 ENTITY_ID="00000000-0000-0000-0000-000000000002"
@@ -49,7 +52,7 @@ docker compose exec -T app python -m src.seed_data >/dev/null
 
 echo "=== FX feed contract: deterministic ECB parser/derivation ==="
 docker compose exec -T app python -m unittest -q \
-  src.tests.test_fx_rate_worker src.tests.test_invoice_fx
+  tests.unit.test_fx_rate_worker tests.unit.test_invoice_fx
 echo "PASS: ECB validation, INR cross-rate derivation and invoice FX rounding"
 
 # Deterministic fallback for the API1 integration test. A live ECB row dated

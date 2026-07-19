@@ -160,7 +160,7 @@ Run:
 
 ```bash
 docker compose up -d --build
-./test_api.sh
+./tests/integration/test_api.sh
 ```
 
 The script generates fresh JWTs, seeds deterministic data, exercises the six required APIs plus health, verifies cached payment retry, checks balanced journal entries, and asserts that invoice balance, AR aging, and GL net AR all equal INR 74,000.

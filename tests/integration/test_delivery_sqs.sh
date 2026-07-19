@@ -2,6 +2,9 @@
 
 set -Eeuo pipefail
 
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$PROJECT_DIR"
+
 BASE_URL="${BASE_URL:-http://localhost:8000}"
 TENANT_ID="00000000-0000-0000-0000-000000000001"
 ENTITY_ID="00000000-0000-0000-0000-000000000002"

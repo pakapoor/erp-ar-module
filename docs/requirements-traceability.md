@@ -24,7 +24,7 @@ labels them required prototype endpoints/functionality.
 
 | ID | Assessment requirement | Design | Prototype/test | Status | Evidence / remaining action |
 |---|---|---|---|---|---|
-| WP1 | `POST /invoices` with line items | Complete | Implemented and integration-tested | `COMPLETE` | `src/routers/invoices.py`, `test_api.sh` |
+| WP1 | `POST /invoices` with line items | Complete | Implemented and integration-tested | `COMPLETE` | `src/routers/invoices.py`, `tests/integration/test_api.sh` |
 | WP2 | `GET /invoices/{id}` with balance and payment history | Complete | Implemented and integration-tested | `COMPLETE` | Includes line items, payment history, credit-memo history, status history and ETag |
 | WP3 | `POST /invoices/{id}/approve` plus GL entries | Complete | Implemented and integration/concurrency-tested | `COMPLETE` | Atomic approval, GL, idempotency and delivery-outbox write; SQS publication is after commit |
 | WP4 | `POST /payments` allocated to one or more invoices | Complete | AUTO FIFO and MANUAL allocation tested | `COMPLETE` | Partial payment, idempotent retry and overpayment liability are tested |
@@ -96,7 +96,7 @@ the interview story separates prototype correctness from production readiness.
 
 | ID | NFR/control | Current state | Status | V2 acceptance target |
 |---|---|---|---|---|
-| NFR1 | Full payment concurrency race matrix | AUTO and MANUAL full-balance races prove one 201/one retryable 409 and one posting | `COMPLETE` | `test_payment_concurrency.sh`; reconciliation remains matched |
+| NFR1 | Full payment concurrency race matrix | AUTO and MANUAL full-balance races prove one 201/one retryable 409 and one posting | `COMPLETE` | `tests/concurrency/test_payment_concurrency.sh`; reconciliation remains matched |
 | NFR2 | Aggregate journal balancing at database boundary | Application creates balanced journals; line constraints exist | `V2` | Deferred DB constraint trigger rejects an unbalanced posted journal |
 | NFR3 | Defense-in-depth PostgreSQL RLS | Policies exist but owner runtime can bypass them | `V2` | Non-owner runtime role, `FORCE ROW LEVEL SECURITY`, negative DB tests |
 | NFR4 | Immutable audit and posted journals | Audit triggers exist; physical UPDATE/DELETE denial is not enforced | `V2` | Separate privileges/triggers plus retention and tamper monitoring |

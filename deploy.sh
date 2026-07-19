@@ -466,10 +466,10 @@ fi
 
 if [ "$RUN_TESTS" = true ]; then
   log "Running integration tests"
-  ./test_api.sh
-  ./test_payment_concurrency.sh
-  ./test_credit_memo.sh
-  ./test_delivery_sqs.sh
+  ./tests/integration/test_api.sh
+  ./tests/concurrency/test_payment_concurrency.sh
+  ./tests/integration/test_credit_memo.sh
+  ./tests/integration/test_delivery_sqs.sh
 fi
 
 log "Deployment successful"

@@ -1,0 +1,1 @@
+"""ERP AR automated tests."""

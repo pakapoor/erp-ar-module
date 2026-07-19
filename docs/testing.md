@@ -46,10 +46,10 @@ container deliberately has no host-published port.
 ## 2. Run the repeatable integration suite
 
 ```bash
-./test_api.sh
-./test_payment_concurrency.sh
-./test_credit_memo.sh
-./test_delivery_sqs.sh
+./tests/integration/test_api.sh
+./tests/concurrency/test_payment_concurrency.sh
+./tests/integration/test_credit_memo.sh
+./tests/integration/test_delivery_sqs.sh
 ```
 
 The script safely reruns because seed inserts use `ON CONFLICT DO NOTHING`, the
@@ -58,6 +58,21 @@ concurrency invoices are settled to zero before exit. A rerun returns cached
 walkthrough responses without creating duplicate invoices, payments, or GL
 entries; it creates a fresh, settled invoice for each real concurrency race.
 `deploy.sh --test` runs all four scripts.
+
+### Python unit-test coverage
+
+Coverage.py is pinned in `requirements.txt` and configured by `.coveragerc`.
+After rebuilding the app image, run:
+
+```bash
+./tests/run_coverage.sh
+```
+
+The command runs the Python unit suite with statement and branch tracing and
+prints missing line numbers. It does not claim that `curl`-driven integration
+tests contribute Python line coverage; their evidence is the assertion matrix
+below. Rebuild with `docker compose build app` whenever test dependencies or
+the image-baked `tests/unit` files change.
 
 The B6 suite uses a dedicated control customer, so its intentionally
 outstanding concurrency balances cannot change Tata Steel's deterministic API5
@@ -226,7 +241,7 @@ Deterministic feed tests:
 
 ```bash
 docker compose exec -T app \
-  python -m unittest -q src.tests.test_fx_rate_worker src.tests.test_invoice_fx
+  python -m unittest -q tests.unit.test_fx_rate_worker tests.unit.test_invoice_fx
 ```
 
 Expected: seven tests pass, covering feed validation/derivation, financial
@@ -275,7 +290,7 @@ Run the focused automated drill; it safely uses a dedicated customer and
 restores the stopped containers on exit:
 
 ```bash
-./test_delivery_sqs.sh
+./tests/integration/test_delivery_sqs.sh
 ```
 
 It stops the delivery adapter, proves three failed receives enter the DLQ,
@@ -322,4 +337,5 @@ docker compose logs --tail=100 app db localstack outbox_publisher stub delivery_
   which versions that development database already contains; migration `004`
   is not designed to recreate an existing policy repeatedly.
 - Port conflict: override `BASE_URL` for the script only if the app is exposed
-  elsewhere, for example `BASE_URL=http://localhost:8080 ./test_api.sh`.
+  elsewhere, for example
+  `BASE_URL=http://localhost:8080 ./tests/integration/test_api.sh`.
