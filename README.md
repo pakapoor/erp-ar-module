@@ -103,6 +103,10 @@ delivery path, tenant/entity isolation, downstream deduplication, three-attempt
 DLQ redrive, preservation of committed financial records during a delivery
 outage, and CFO recovery of a DEAD event.
 
+`tests/integration/test_api_negative.sh` sends malformed JWTs, invalid headers,
+bad JSON shapes and a short hostile-input burst, then proves the service still
+reports healthy rather than leaking an HTTP 500 or crashing.
+
 Run `./tests/run_coverage.sh` for statement and branch coverage of the Python
 unit suite. Coverage is reported separately from the shell-driven integration
 evidence so the reported percentage is not misleading.

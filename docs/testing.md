@@ -47,6 +47,7 @@ container deliberately has no host-published port.
 
 ```bash
 ./tests/integration/test_api.sh
+./tests/integration/test_api_negative.sh
 ./tests/concurrency/test_payment_concurrency.sh
 ./tests/integration/test_credit_memo.sh
 ./tests/integration/test_delivery_sqs.sh
@@ -57,7 +58,7 @@ main walkthrough uses deterministic idempotency keys, and dynamically created
 concurrency invoices are settled to zero before exit. A rerun returns cached
 walkthrough responses without creating duplicate invoices, payments, or GL
 entries; it creates a fresh, settled invoice for each real concurrency race.
-`deploy.sh --test` runs all four scripts.
+`deploy.sh --test` runs all five scripts.
 
 ### Python unit-test coverage
 
@@ -89,6 +90,9 @@ void and write-off still require their extended acceptance matrices.
 | Seed/JWT setup | Reliance tenant/entity/users/customer/GL accounts/OPEN July 2026 period exist; fresh one-hour development JWTs are generated |
 | Gateway missing JWT | HTTP 401 before the protected request reaches FastAPI |
 | Gateway invalid signature | HTTP 401 for a correctly shaped token signed with the wrong secret |
+| JWT unit negatives | Malformed, unsigned-key-ID, wrong-signature, expired, missing-claim and wrong-type tokens all produce HTTP 401 |
+| Malformed request resilience | Invalid auth scheme/header name, missing required headers, malformed JSON, wrong JSON shape and wrong content type produce controlled 4xx responses |
+| Hostile-input burst | 25 malformed JWT requests are rejected and the subsequent health check remains HTTP 200 |
 | Application network isolation | Docker reports no host mapping for FastAPI port 8080 |
 | Zero Trust application check | A direct Compose-network request with an invalid JWT is independently rejected with HTTP 401 by FastAPI |
 | Trace propagation | Envoy-generated request ID is returned as `X-Trace-ID` by FastAPI |

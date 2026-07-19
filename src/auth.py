@@ -7,7 +7,7 @@ import httpx
 from fastapi import Depends, HTTPException, Header, status
 from jose import jwt, JWTError
 from jose.backends import RSAKey
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +118,10 @@ def validate_jwt(token: str) -> CurrentUser:
 
         if not all([user_id, tenant_id, entity_id]):
             raise credentials_exception
+        if not isinstance(roles, list) or not all(
+            isinstance(role, str) and role for role in roles
+        ):
+            raise credentials_exception
 
         return CurrentUser(
             user_id=user_id,
@@ -127,7 +131,7 @@ def validate_jwt(token: str) -> CurrentUser:
             email=payload.get("email"),
         )
 
-    except JWTError as e:
+    except (JWTError, ValidationError, TypeError, ValueError) as e:
         logger.warning(f"JWT validation failed: {e}")
         raise credentials_exception
 
@@ -145,7 +149,12 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Bearer token required",
         )
-    token = authorization.replace("Bearer ", "")
+    token = authorization[len("Bearer "):].strip()
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Bearer token required",
+        )
     return validate_jwt(token)
 
 
