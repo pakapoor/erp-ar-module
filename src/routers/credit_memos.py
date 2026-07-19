@@ -50,6 +50,23 @@ WO_REASONS = ["BANKRUPTCY", "ABSCONDING", "UNCOLLECTIBLE", "BAD_DEBT"]
 VOID_REASONS = ["DUPLICATE", "WRONG_CUSTOMER", "DATA_ERROR"]
 
 
+async def set_audit_context(db: AsyncSession, current_user: CurrentUser) -> None:
+    """Provide verified actor scope to database audit triggers."""
+    await db.execute(
+        text("""
+            SELECT
+                set_config('app.current_user_id', :user_id, true),
+                set_config('app.tenant_id', :tenant_id, true),
+                set_config('app.entity_id', :entity_id, true)
+        """),
+        {
+            "user_id": current_user.user_id,
+            "tenant_id": current_user.tenant_id,
+            "entity_id": current_user.entity_id,
+        },
+    )
+
+
 # ============================================================
 # API: POST /invoices/{id}/credit-memos
 # FR-B1 — Credit Memo
@@ -73,6 +90,7 @@ async def create_credit_memo(
     Allowed against: APPROVED, SENT, PARTIALLY_PAID, PAID
     Not allowed against: DRAFT, VOID, WRITTEN_OFF
     """
+    endpoint_name = f"POST /invoices/{invoice_id}/credit-memos"
     reason_code = payload.get("reason_code", "").upper()
     description = payload.get("description", "")
     amount = Decimal(str(payload.get("amount", 0)))
@@ -86,6 +104,8 @@ async def create_credit_memo(
     if amount <= 0:
         raise BusinessRuleException("INVALID_AMOUNT", "Credit memo amount must be positive")
 
+    await set_audit_context(db, current_user)
+
     # ── Idempotency check ──────────────────────────────────
     request_hash = hashlib.sha256(
         json.dumps({"invoice_id": invoice_id, "amount": str(amount),
@@ -94,6 +114,7 @@ async def create_credit_memo(
 
     existing = await check_idempotency(
         db, x_idempotency_key, current_user.tenant_id,
+        current_user.entity_id,
         f"POST /invoices/{invoice_id}/credit-memos", request_hash
     )
     if existing:
@@ -151,6 +172,7 @@ async def create_credit_memo(
     # ── Begin idempotency ──────────────────────────────────
     await create_idempotency_key(
         db, x_idempotency_key, current_user.tenant_id,
+        current_user.entity_id,
         f"POST /invoices/{invoice_id}/credit-memos", request_hash
     )
 
@@ -164,6 +186,11 @@ async def create_credit_memo(
         tax_credit = Decimal("0")
         subtotal_credit = amount
 
+    rate = invoice.exchange_rate or Decimal("1")
+    base_credit = (amount * rate).quantize(Decimal("0.0001"))
+    base_tax_credit = (tax_credit * rate).quantize(Decimal("0.0001"))
+    base_subtotal_credit = base_credit - base_tax_credit
+
     now = datetime.utcnow()
 
     # ── Create credit memo record ──────────────────────────
@@ -174,11 +201,11 @@ async def create_credit_memo(
         reason_code=reason_code,
         description=description,
         amount=amount,
-        base_amount=amount,  # simplified: same currency as invoice
+        base_amount=base_credit,
         currency=invoice.transaction_currency,
         status="APPLIED",
-        created_by=current_user.user_id,
-        approved_by=current_user.user_id,
+        created_by=invoice.created_by,   # invoice creator raises the CM
+        approved_by=current_user.user_id,  # approver approves it (SOX: different person)
         approved_at=now,
         applied_at=now,
     )
@@ -213,7 +240,7 @@ async def create_credit_memo(
             description="Revenue reversed",
             debit_amount=subtotal_credit,
             credit_amount=Decimal("0"),
-            base_debit_amount=subtotal_credit,
+            base_debit_amount=base_subtotal_credit,
             base_credit_amount=Decimal("0"),
         ))
 
@@ -226,7 +253,7 @@ async def create_credit_memo(
             description="Tax payable reversed",
             debit_amount=tax_credit,
             credit_amount=Decimal("0"),
-            base_debit_amount=tax_credit,
+            base_debit_amount=base_tax_credit,
             base_credit_amount=Decimal("0"),
         ))
 
@@ -240,12 +267,16 @@ async def create_credit_memo(
             debit_amount=Decimal("0"),
             credit_amount=amount,
             base_debit_amount=Decimal("0"),
-            base_credit_amount=amount,
+            base_credit_amount=base_credit,
         ))
 
     # ── Update invoice balance ─────────────────────────────
-    new_balance = max(invoice.balance_amount - amount, Decimal("0"))
+    balance_before = invoice.balance_amount
+    base_balance_before = invoice.base_balance_amount
+    new_balance = max(balance_before - amount, Decimal("0"))
+    new_base_balance = max(base_balance_before - base_credit, Decimal("0"))
     invoice.balance_amount = new_balance
+    invoice.base_balance_amount = new_base_balance
     invoice.version += 1
     invoice.updated_at = now
     if new_balance == 0 and invoice.status != "PAID":
@@ -264,15 +295,18 @@ async def create_credit_memo(
         "tax_reversed": str(tax_credit),
         "currency": invoice.transaction_currency,
         "status": "APPLIED",
-        "invoice_balance_before": str(invoice.balance_amount + amount),
+        "invoice_balance_before": str(balance_before),
         "invoice_balance_after": str(new_balance),
+        "base_amount": str(base_credit),
+        "base_balance_before": str(base_balance_before),
+        "base_balance_after": str(new_base_balance),
         "invoice_status": invoice.status,
         "journal_entry_id": journal_entry.id,
         "approved_by": current_user.user_id,
         "applied_at": now.isoformat(),
     }
 
-    await complete_idempotency_key(db, x_idempotency_key, 201, response_body)
+    await complete_idempotency_key(db, x_idempotency_key, current_user.tenant_id, current_user.entity_id, endpoint_name, 201, response_body)
     await db.commit()
 
     logger.info(f"Credit memo {cm.id} applied to invoice {invoice_id}: {amount} {reason_code}")
@@ -302,6 +336,7 @@ async def write_off_invoice(
     Write-off applies to OUTSTANDING BALANCE only.
     Already-paid amount is never reversed.
     """
+    endpoint_name = f"POST /invoices/{invoice_id}/writeoff"
     reason_code = payload.get("reason_code", "").upper()
     description = payload.get("description", "")
     notes = payload.get("notes", "")
@@ -312,6 +347,8 @@ async def write_off_invoice(
             f"reason_code must be one of: {WO_REASONS}"
         )
 
+    await set_audit_context(db, current_user)
+
     # ── Idempotency check ──────────────────────────────────
     request_hash = hashlib.sha256(
         f"{invoice_id}:{reason_code}:{current_user.user_id}".encode()
@@ -319,6 +356,7 @@ async def write_off_invoice(
 
     existing = await check_idempotency(
         db, x_idempotency_key, current_user.tenant_id,
+        current_user.entity_id,
         f"POST /invoices/{invoice_id}/writeoff", request_hash
     )
     if existing:
@@ -374,11 +412,13 @@ async def write_off_invoice(
     gl_accounts = {gl.account_code: gl for gl in gl_result.scalars().all()}
 
     writeoff_amount = invoice.balance_amount
+    base_writeoff_amount = invoice.base_balance_amount
     now = datetime.utcnow()
 
     # ── Begin idempotency ──────────────────────────────────
     await create_idempotency_key(
         db, x_idempotency_key, current_user.tenant_id,
+        current_user.entity_id,
         f"POST /invoices/{invoice_id}/writeoff", request_hash
     )
 
@@ -409,7 +449,7 @@ async def write_off_invoice(
             description=f"Bad debt expense: {reason_code}",
             debit_amount=writeoff_amount,
             credit_amount=Decimal("0"),
-            base_debit_amount=writeoff_amount,
+            base_debit_amount=base_writeoff_amount,
             base_credit_amount=Decimal("0"),
         ))
 
@@ -423,12 +463,13 @@ async def write_off_invoice(
             debit_amount=Decimal("0"),
             credit_amount=writeoff_amount,
             base_debit_amount=Decimal("0"),
-            base_credit_amount=writeoff_amount,
+            base_credit_amount=base_writeoff_amount,
         ))
 
     # ── Update invoice ─────────────────────────────────────
     invoice.status = "WRITTEN_OFF"
     invoice.balance_amount = Decimal("0")
+    invoice.base_balance_amount = Decimal("0")
     invoice.version += 1
     invoice.updated_at = now
 
@@ -441,6 +482,7 @@ async def write_off_invoice(
         "description": description,
         "notes": notes,
         "writeoff_amount": str(writeoff_amount),
+        "base_writeoff_amount": str(base_writeoff_amount),
         "previously_paid": str(invoice.total_amount - writeoff_amount),
         "currency": invoice.transaction_currency,
         "journal_entry_id": journal_entry.id,
@@ -448,7 +490,7 @@ async def write_off_invoice(
         "written_off_at": now.isoformat(),
     }
 
-    await complete_idempotency_key(db, x_idempotency_key, 201, response_body)
+    await complete_idempotency_key(db, x_idempotency_key, current_user.tenant_id, current_user.entity_id, endpoint_name, 201, response_body)
     await db.commit()
 
     logger.info(f"Invoice {invoice_id} written off: {writeoff_amount} {reason_code}")
@@ -480,6 +522,10 @@ async def void_invoice(
     Allowed against: DRAFT, APPROVED, SENT
     Not allowed against: PAID, PARTIALLY_PAID, WRITTEN_OFF
     """
+    endpoint_name = f"POST /invoices/{invoice_id}/void"
+    # PostgreSQL requires the isolation level before the first query.
+    await db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
+
     reason_code = payload.get("reason_code", "").upper()
     description = payload.get("description", "")
     void_reference = payload.get("void_reference", "")  # e.g. duplicate of invoice id
@@ -490,6 +536,8 @@ async def void_invoice(
             f"reason_code must be one of: {VOID_REASONS}"
         )
 
+    await set_audit_context(db, current_user)
+
     # ── Idempotency check ──────────────────────────────────
     request_hash = hashlib.sha256(
         f"{invoice_id}:{reason_code}:{current_user.user_id}".encode()
@@ -497,6 +545,7 @@ async def void_invoice(
 
     existing = await check_idempotency(
         db, x_idempotency_key, current_user.tenant_id,
+        current_user.entity_id,
         f"POST /invoices/{invoice_id}/void", request_hash
     )
     if existing:
@@ -504,7 +553,6 @@ async def void_invoice(
                             content=existing.response_body)
 
     # ── Fetch invoice ──────────────────────────────────────
-    await db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
     result = await db.execute(
         select(Invoice).where(
             and_(Invoice.id == invoice_id,
@@ -528,6 +576,7 @@ async def void_invoice(
     # ── Begin idempotency ──────────────────────────────────
     await create_idempotency_key(
         db, x_idempotency_key, current_user.tenant_id,
+        current_user.entity_id,
         f"POST /invoices/{invoice_id}/void", request_hash
     )
 
@@ -621,6 +670,7 @@ async def void_invoice(
     # ── Update invoice ─────────────────────────────────────
     invoice.status = "VOID"
     invoice.balance_amount = Decimal("0")
+    invoice.base_balance_amount = Decimal("0")
     invoice.version += 1
     invoice.updated_at = now
 
@@ -638,7 +688,7 @@ async def void_invoice(
         "voided_at": now.isoformat(),
     }
 
-    await complete_idempotency_key(db, x_idempotency_key, 200, response_body)
+    await complete_idempotency_key(db, x_idempotency_key, current_user.tenant_id, current_user.entity_id, endpoint_name, 200, response_body)
     await db.commit()
 
     logger.info(f"Invoice {invoice_id} voided: {reason_code}")

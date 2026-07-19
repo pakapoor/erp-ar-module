@@ -814,4 +814,74 @@ assert_json "$T6_PAYMENT_RESPONSE" \
   'data["allocations"][0]["invoice_status"] == "PAID" and data["unallocated_amount"] == "0"' \
   "T6 control invoice is settled so the suite remains repeatable"
 
+
+echo "=== FR-B1: Credit Memo ==="
+CM_INV_RESPONSE=$(curl -sf -X POST $BASE_URL/api/v1/invoices \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Idempotency-Key: cm-inv-001-$(date +%s%N)" \
+  -d '{"customer_id":"00000000-0000-0000-0000-000000000005","invoice_date":"2026-07-19","payment_terms":"NET30","currency":"INR","line_items":[{"description":"Safety Valves","quantity":10,"unit_price":5000,"tax_rate":12}]}')
+CM_INVOICE_ID=$(echo $CM_INV_RESPONSE | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["id"])')
+curl -sf -X POST $BASE_URL/api/v1/invoices/$CM_INVOICE_ID/approve \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: cm-appr-$(date +%s%N)" \
+  -H "If-Match: 1" \
+  -d '{"notes":"Approved for CM test"}' > /dev/null
+CM_RESPONSE=$(curl -sf -X POST $BASE_URL/api/v1/invoices/$CM_INVOICE_ID/credit-memos \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: cm-test-$(date +%s%N)" \
+  -d '{"reason_code":"RETURN","description":"Damaged goods returned","amount":56000,"include_tax":true}')
+assert_json "$CM_RESPONSE" \
+  'data["status"] == "APPLIED" and data["reason_code"] == "RETURN" and "journal_entry_id" in data' \
+  "FR-B1 credit memo applied with GL entry"
+CM_INV_CHECK=$(curl -sf $BASE_URL/api/v1/invoices/$CM_INVOICE_ID -H "Authorization: Bearer $PRIYA_TOKEN")
+assert_json "$CM_INV_CHECK" \
+  'float(data["balance_amount"]) == 0' \
+  "FR-B1 full credit memo clears its control invoice"
+
+echo "=== FR-B3: Invoice Void ==="
+VOID_INV_RESPONSE=$(curl -sf -X POST $BASE_URL/api/v1/invoices \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Idempotency-Key: void-inv-$(date +%s%N)" \
+  -d '{"customer_id":"00000000-0000-0000-0000-000000000005","invoice_date":"2026-07-19","payment_terms":"NET30","currency":"INR","line_items":[{"description":"Duplicate Invoice","quantity":1,"unit_price":5000,"tax_rate":0}]}')
+VOID_INVOICE_ID=$(echo $VOID_INV_RESPONSE | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["id"])')
+VOID_RESPONSE=$(curl -sf -X POST $BASE_URL/api/v1/invoices/$VOID_INVOICE_ID/void \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: void-test-$(date +%s%N)" \
+  -d '{"reason_code":"DATA_ERROR","description":"Wrong amounts entered"}')
+assert_json "$VOID_RESPONSE" \
+  'data["status"] == "VOID" and data["gl_reversal"] == False' \
+  "FR-B3 draft invoice voided without GL reversal"
+
+echo "=== FR-B2: Write-off ==="
+WO_INV_RESPONSE=$(curl -sf -X POST $BASE_URL/api/v1/invoices \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Idempotency-Key: wo-inv-$(date +%s%N)" \
+  -d '{"customer_id":"00000000-0000-0000-0000-000000000005","invoice_date":"2026-07-19","payment_terms":"NET30","currency":"INR","line_items":[{"description":"Uncollectible debt","quantity":1,"unit_price":25000,"tax_rate":18}]}')
+WO_INVOICE_ID=$(echo $WO_INV_RESPONSE | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["id"])')
+curl -sf -X POST $BASE_URL/api/v1/invoices/$WO_INVOICE_ID/approve \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: wo-appr-$(date +%s%N)" \
+  -H "If-Match: 1" \
+  -d '{"notes":"Approved for WO test"}' > /dev/null
+WO_RESPONSE=$(curl -sf -X POST $BASE_URL/api/v1/invoices/$WO_INVOICE_ID/writeoff \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: wo-test-$(date +%s%N)" \
+  -d '{"reason_code":"BANKRUPTCY","description":"Customer declared bankruptcy"}')
+assert_json "$WO_RESPONSE" \
+  'data["status"] == "WRITTEN_OFF" and "journal_entry_id" in data' \
+  "FR-B2 invoice written off with Bad Debt GL entry"
+
+FR_B_HEALTH_RESPONSE=$(curl -sf "$BASE_URL/health")
+assert_json "$FR_B_HEALTH_RESPONSE" \
+  'data["status"] == "healthy" and data["checks"]["reconciliation_status"] == "MATCHED"' \
+  "FR-B lifecycle corrections preserve AR-to-GL reconciliation"
+
 echo "=== All integration assertions passed ==="

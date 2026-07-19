@@ -17,6 +17,7 @@ GL_TAX = "00000000-0000-0000-0000-000000000012"
 GL_REVENUE = "00000000-0000-0000-0000-000000000013"
 GL_FX = "00000000-0000-0000-0000-000000000014"
 GL_CUSTOMER_CREDIT = "00000000-0000-0000-0000-000000000015"
+GL_BAD_DEBT = "00000000-0000-0000-0000-000000000017"
 PERIOD_ID = "00000000-0000-0000-0000-000000000020"
 
 
@@ -164,20 +165,12 @@ async def seed_data() -> None:
                     "account_type": "EXPENSE",
                 },
                 {
-                    "id": "00000000-0000-0000-0000-000000000015",
+                    "id": GL_BAD_DEBT,
                     "tenant_id": TENANT_ID,
                     "entity_id": ENTITY_ID,
                     "account_code": "4100",
                     "account_name": "Bad Debt Expense",
                     "account_type": "EXPENSE",
-                },
-                {
-                    "id": "00000000-0000-0000-0000-000000000016",
-                    "tenant_id": TENANT_ID,
-                    "entity_id": ENTITY_ID,
-                    "account_code": "2100",
-                    "account_name": "Customer Credit",
-                    "account_type": "LIABILITY",
                 },
             ],
         )
