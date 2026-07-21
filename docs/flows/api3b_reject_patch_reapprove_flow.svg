@@ -1,0 +1,149 @@
+<svg width="100%" viewBox="0 0 690 760" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>API3b — Reject, patch, and re-approve flow</title>
+<desc>Sequence showing an approver rejecting an invoice with a reason, the creator patching it to fix the issue, and re-submission for approval</desc>
+<rect x="0" y="0" width="690" height="760" fill="#ffffff"/>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+<style>
+text { font-family: "Anthropic Sans", -apple-system, "system-ui", "Segoe UI", sans-serif; fill: #0b0b0b; }
+.th { font-size: 14px; font-weight: 500; }
+.ts { font-size: 12px; }
+.stage-label { font-size: 13px; font-weight: 600; }
+.coral-fill { fill: #FAECE7; stroke: #993C1D; }
+.coral-text { fill: #712B13; }
+.purple-fill { fill: #EEEDFE; stroke: #534AB7; }
+.purple-text { fill: #3C3489; }
+.blue-fill { fill: #E6F1FB; stroke: #185FA5; }
+.blue-text { fill: #0C447C; }
+.teal-fill { fill: #E1F5EE; stroke: #0F6E56; }
+.teal-text { fill: #085041; }
+.footer-fill { fill: #FCFCFB; stroke: rgba(11,11,11,0.2); }
+</style>
+</defs>
+
+<text x="345" y="24" text-anchor="middle" class="th">API3b — Reject, patch, and re-approve</text>
+<text x="345" y="42" text-anchor="middle" class="ts" style="fill:#52514E">Rejected invoice returns to DRAFT with a reason, is corrected, then re-approved</text>
+
+<!-- ============================================================ -->
+<!-- STAGE 1: REJECT                                               -->
+<!-- ============================================================ -->
+<text x="20" y="68" class="stage-label" style="fill:#993C1D">Stage 1 — Approver rejects</text>
+
+<g>
+<rect x="20" y="80" width="110" height="56" rx="8" stroke-width="0.5" class="coral-fill"/>
+<text x="75" y="102" text-anchor="middle" dominant-baseline="central" class="th coral-text">Priya</text>
+<text x="75" y="120" text-anchor="middle" dominant-baseline="central" class="ts coral-text">invoice_approver</text>
+</g>
+
+<line x1="130" y1="108" x2="168" y2="108" stroke="#993C1D" stroke-width="1.5" marker-end="url(#arrow)" fill="none"/>
+
+<g>
+<rect x="170" y="70" width="220" height="76" rx="8" stroke-width="0.5" class="coral-fill"/>
+<text x="280" y="92" text-anchor="middle" dominant-baseline="central" class="th coral-text">POST /invoices/{id}/approve</text>
+<text x="280" y="110" text-anchor="middle" dominant-baseline="central" class="ts coral-text">{action: "REJECT",</text>
+<text x="280" y="126" text-anchor="middle" dominant-baseline="central" class="ts coral-text">rejection_reason: "..."}</text>
+</g>
+
+<line x1="390" y1="108" x2="428" y2="108" stroke="#993C1D" stroke-width="1.5" marker-end="url(#arrow)" fill="none"/>
+
+<g>
+<rect x="430" y="60" width="240" height="96" rx="8" stroke-width="0.5" class="coral-fill"/>
+<text x="550" y="82" text-anchor="middle" dominant-baseline="central" class="th coral-text">AR application</text>
+<text x="550" y="100" text-anchor="middle" dominant-baseline="central" class="ts coral-text">Same role/SOX checks as approve</text>
+<text x="550" y="116" text-anchor="middle" dominant-baseline="central" class="ts coral-text">rejector != created_by</text>
+<text x="550" y="132" text-anchor="middle" dominant-baseline="central" class="ts coral-text">rejection_reason required</text>
+</g>
+
+<line x1="550" y1="156" x2="550" y2="180" stroke="#993C1D" stroke-width="1.5" marker-end="url(#arrow)" fill="none"/>
+
+<g>
+<rect x="430" y="182" width="240" height="76" rx="8" stroke-width="0.5" class="blue-fill"/>
+<text x="550" y="202" text-anchor="middle" dominant-baseline="central" class="th blue-text">PostgreSQL</text>
+<text x="550" y="220" text-anchor="middle" dominant-baseline="central" class="ts blue-text">invoice: DRAFT, version+1</text>
+<text x="550" y="236" text-anchor="middle" dominant-baseline="central" class="ts blue-text">rejection_reason stored</text>
+<text x="550" y="250" text-anchor="middle" dominant-baseline="central" class="ts blue-text">NO GL entry, NO delivery</text>
+</g>
+
+<rect x="20" y="270" width="650" height="46" rx="8" stroke-width="0.5" class="footer-fill"/>
+<text x="32" y="286" dominant-baseline="central" class="ts" style="font-weight:500">Result: 200, status: "REJECTED" in the response, invoice row: DRAFT</text>
+<text x="32" y="302" dominant-baseline="central" class="ts" style="fill:#52514E">rejection_reason: "Line 2 Safety Valves -- interstate supply must use IGST not CGST+SGST"</text>
+
+<!-- ============================================================ -->
+<!-- STAGE 2: PATCH                                                -->
+<!-- ============================================================ -->
+<text x="20" y="342" class="stage-label" style="fill:#3C3489">Stage 2 — Creator patches the DRAFT</text>
+
+<g>
+<rect x="20" y="354" width="110" height="56" rx="8" stroke-width="0.5" class="purple-fill"/>
+<text x="75" y="376" text-anchor="middle" dominant-baseline="central" class="th purple-text">Rahul</text>
+<text x="75" y="394" text-anchor="middle" dominant-baseline="central" class="ts purple-text">invoice_creator</text>
+</g>
+
+<line x1="130" y1="382" x2="168" y2="382" stroke="#534AB7" stroke-width="1.5" marker-end="url(#arrow)" fill="none"/>
+
+<g>
+<rect x="170" y="344" width="220" height="76" rx="8" stroke-width="0.5" class="purple-fill"/>
+<text x="280" y="366" text-anchor="middle" dominant-baseline="central" class="th purple-text">PATCH /invoices/{id}</text>
+<text x="280" y="384" text-anchor="middle" dominant-baseline="central" class="ts purple-text">If-Match: &lt;version&gt;</text>
+<text x="280" y="400" text-anchor="middle" dominant-baseline="central" class="ts purple-text">{line_items: [corrected]}</text>
+</g>
+
+<line x1="390" y1="382" x2="428" y2="382" stroke="#534AB7" stroke-width="1.5" marker-end="url(#arrow)" fill="none"/>
+
+<g>
+<rect x="430" y="334" width="240" height="126" rx="8" stroke-width="0.5" class="purple-fill"/>
+<text x="550" y="356" text-anchor="middle" dominant-baseline="central" class="th purple-text">AR application</text>
+<text x="550" y="374" text-anchor="middle" dominant-baseline="central" class="ts purple-text">RBAC: invoice_creator only</text>
+<text x="550" y="390" text-anchor="middle" dominant-baseline="central" class="ts purple-text">Status must be DRAFT</text>
+<text x="550" y="406" text-anchor="middle" dominant-baseline="central" class="ts purple-text">Recalculate totals + FX rate</text>
+<text x="550" y="422" text-anchor="middle" dominant-baseline="central" class="ts purple-text">Re-check credit limit</text>
+<text x="550" y="438" text-anchor="middle" dominant-baseline="central" class="ts purple-text">Clear rejection_reason</text>
+</g>
+
+<line x1="550" y1="460" x2="550" y2="484" stroke="#534AB7" stroke-width="1.5" marker-end="url(#arrow)" fill="none"/>
+
+<g>
+<rect x="430" y="486" width="240" height="76" rx="8" stroke-width="0.5" class="blue-fill"/>
+<text x="550" y="506" text-anchor="middle" dominant-baseline="central" class="th blue-text">PostgreSQL</text>
+<text x="550" y="524" text-anchor="middle" dominant-baseline="central" class="ts blue-text">invoice: DRAFT, version+1</text>
+<text x="550" y="540" text-anchor="middle" dominant-baseline="central" class="ts blue-text">line_items replaced</text>
+<text x="550" y="554" text-anchor="middle" dominant-baseline="central" class="ts blue-text">rejection_reason: null</text>
+</g>
+
+<rect x="20" y="574" width="650" height="46" rx="8" stroke-width="0.5" class="footer-fill"/>
+<text x="32" y="590" dominant-baseline="central" class="ts" style="font-weight:500">Result: 200, corrected DRAFT invoice, ready for resubmission</text>
+<text x="32" y="606" dominant-baseline="central" class="ts" style="fill:#52514E">line_items: [{description: "Safety Valves", tax_jurisdiction: "KA", tax_rate: 12}] -- rejection_reason cleared</text>
+
+<!-- ============================================================ -->
+<!-- STAGE 3: RE-APPROVE                                           -->
+<!-- ============================================================ -->
+<text x="20" y="646" class="stage-label" style="fill:#0F6E56">Stage 3 — Approver re-approves</text>
+
+<g>
+<rect x="20" y="658" width="110" height="56" rx="8" stroke-width="0.5" class="teal-fill"/>
+<text x="75" y="680" text-anchor="middle" dominant-baseline="central" class="th teal-text">Priya</text>
+<text x="75" y="698" text-anchor="middle" dominant-baseline="central" class="ts teal-text">invoice_approver</text>
+</g>
+
+<line x1="130" y1="686" x2="168" y2="686" stroke="#0F6E56" stroke-width="1.5" marker-end="url(#arrow)" fill="none"/>
+
+<g>
+<rect x="170" y="658" width="220" height="56" rx="8" stroke-width="0.5" class="teal-fill"/>
+<text x="280" y="680" text-anchor="middle" dominant-baseline="central" class="th teal-text">POST /invoices/{id}/approve</text>
+<text x="280" y="698" text-anchor="middle" dominant-baseline="central" class="ts teal-text">{action: "APPROVE"} (default)</text>
+</g>
+
+<line x1="390" y1="686" x2="428" y2="686" stroke="#0F6E56" stroke-width="1.5" marker-end="url(#arrow)" fill="none"/>
+
+<g>
+<rect x="430" y="658" width="240" height="56" rx="8" stroke-width="0.5" class="teal-fill"/>
+<text x="550" y="680" text-anchor="middle" dominant-baseline="central" class="th teal-text">Proceeds as API3 happy path</text>
+<text x="550" y="698" text-anchor="middle" dominant-baseline="central" class="ts teal-text">GL entry generated, delivery queued</text>
+</g>
+
+<rect x="20" y="726" width="650" height="26" rx="8" stroke-width="0.5" class="footer-fill"/>
+<text x="32" y="739" dominant-baseline="central" class="ts" style="fill:#52514E">See API3 above for the full approval + GL-entry sequence.</text>
+
+</svg>

@@ -58,7 +58,8 @@ API flows shown in diagram:
 - (5) GET /customers/{id}/aging -- AR aging report (FR8)
 - (6) GET /journal-entries -- GL journal entries (FR9)
 - (7) GET /health -- operational health check (NFR5)
-- Bonus lifecycle commands (not shown): credit memo, write-off and void
+- Bonus lifecycle commands (not shown): PATCH /invoices/{id}, reject
+  (`action: REJECT` on approve), credit memo, write-off and void
 
 (1) (2) (3) (4) (5) (6) = business APIs (FRs)
 (7) = operational API (NFR5)
@@ -139,6 +140,32 @@ request/response fields and error contracts remain authoritative in
   through the operations API without changing approval or GL records
 - Audit trigger fires automatically
 - Result: 200, status=APPROVED, version+1, journal_entry_id, delivery_status=QUEUED
+
+### (3b) Reject, patch, and re-approve
+
+![API3b reject, patch, and re-approve flow](flows/api3b_reject_patch_reapprove_flow.svg)
+
+An invoice does not have to be scrapped and recreated if it is wrong; it is
+corrected in place and resubmitted:
+
+- **Reject** -- `POST /invoices/{id}/approve` with `{action: "REJECT",
+  rejection_reason: "..."}`. Same role and SOX checks as approval (rejector
+  must differ from creator). The invoice returns to DRAFT, `rejection_reason`
+  is stored, `version` increments, and no GL entry or delivery is created.
+- **Patch** -- the creator calls `PATCH /invoices/{id}` (creator role only,
+  DRAFT only, If-Match required). Line items are replaced, totals and the FX
+  rate are recalculated, the credit limit is re-checked, and
+  `rejection_reason` is cleared as part of the same update -- there is no
+  separate "acknowledge rejection" step.
+- **Re-approve** -- a plain `POST /invoices/{id}/approve` (the default
+  `action: "APPROVE"`) proceeds exactly like the (3) happy path above: role +
+  SOX + period checks, GL entry generation, and a queued delivery event.
+
+There is no dedicated rejection table: the rejector's identity is not stored
+on the invoice row, only in `audit_log`. `rejection_reason` and the DRAFT
+status are the only durable trace on `invoice` itself, which is why PATCH
+clears the reason on save -- once corrected, the old reason no longer
+describes the current line items.
 
 ### (4) POST /payments (FR4, FR11)
 
