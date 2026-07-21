@@ -32,3 +32,5 @@ Thumbs.db
 # Environment
 .env
 .env.local
+debug/.last_invoice_id
+debug/*.log

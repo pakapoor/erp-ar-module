@@ -13,5 +13,5 @@ if [ -z "$INVOICE_ID" ] || [ "$INVOICE_ID" = "ERROR" ]; then
 fi
 
 echo "=== Getting Invoice: $INVOICE_ID ==="
-curl -s -X GET $BASE_URL/invoices/$INVOICE_ID 
+curl -s -X GET $BASE_URL/invoices/$INVOICE_ID \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool

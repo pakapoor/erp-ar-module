@@ -8,10 +8,10 @@ TOKEN=$(cd /Users/pankajkapoor/projects/erp-ar-module && docker compose exec -T 
 IDEM_KEY="debug-create-$(date +%s)"
 
 echo "=== Creating Invoice ==="
-RESPONSE=$(curl -s -X POST $BASE_URL/invoices 
-  -H "Content-Type: application/json" 
-  -H "Authorization: Bearer $TOKEN" 
-  -H "X-Idempotency-Key: $IDEM_KEY" 
+RESPONSE=$(curl -s -X POST $BASE_URL/invoices \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Idempotency-Key: $IDEM_KEY" \
   -d '{
     "customer_id": "00000000-0000-0000-0000-000000000005",
     "invoice_date": "2026-07-21",

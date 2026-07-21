@@ -21,9 +21,9 @@ echo "  Cr 3100 Sales Revenue"
 echo "  Cr 2200 Tax Payable"
 echo ""
 
-curl -s -X POST $BASE_URL/invoices/$INVOICE_ID/approve 
-  -H "Content-Type: application/json" 
-  -H "Authorization: Bearer $TOKEN" 
-  -H "X-Idempotency-Key: $IDEM_KEY" 
-  -H "If-Match: $VERSION" 
+curl -s -X POST $BASE_URL/invoices/$INVOICE_ID/approve \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Idempotency-Key: $IDEM_KEY" \
+  -H "If-Match: $VERSION" \
   -d '{"notes": "Approved in debug session"}' | python3 -m json.tool
