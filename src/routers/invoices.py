@@ -707,6 +707,65 @@ async def approve_invoice(
             "Invoice creator cannot approve their own invoice"
         )
 
+    # ── Rejection path ──────────────────────────────────────
+    if payload.action == "REJECT":
+        await create_idempotency_key(
+            db, x_idempotency_key, current_user.tenant_id, current_user.entity_id,
+            f"POST /invoices/{invoice_id}/approve", request_hash
+        )
+
+        now = datetime.utcnow()
+        claimed = await db.execute(
+            update(Invoice)
+            .where(
+                and_(
+                    Invoice.id == invoice_id,
+                    Invoice.tenant_id == current_user.tenant_id,
+                    Invoice.entity_id == current_user.entity_id,
+                    Invoice.version == invoice.version,
+                    Invoice.status == "DRAFT",
+                )
+            )
+            .values(
+                status="DRAFT",
+                rejection_reason=payload.rejection_reason,
+                version=Invoice.version + 1,
+                updated_at=now,
+            )
+            .returning(Invoice.version)
+            .execution_options(synchronize_session=False)
+        )
+        new_version = claimed.scalar_one_or_none()
+        if new_version is None:
+            raise VersionConflictException(
+                "Invoice was modified by another request. Please refresh."
+            )
+
+        response_body = {
+            "id": invoice.id,
+            "status": "REJECTED",
+            "version": new_version,
+            "rejected_by": current_user.user_id,
+            "rejected_at": now.isoformat(),
+            "rejection_reason": payload.rejection_reason,
+        }
+
+        await complete_idempotency_key(
+            db,
+            x_idempotency_key,
+            current_user.tenant_id,
+            current_user.entity_id,
+            f"POST /invoices/{invoice_id}/approve",
+            200,
+            response_body,
+        )
+        await db.commit()
+
+        logger.info(
+            f"Invoice {invoice.id} rejected by {current_user.user_id}"
+        )
+        return JSONResponse(status_code=200, content=response_body)
+
     # ── Period close check ─────────────────────────────────
     period_result = await db.execute(
         select(AccountingPeriod).where(

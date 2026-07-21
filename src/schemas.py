@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from decimal import Decimal
-from typing import Optional, List
+from typing import Optional, List, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -131,10 +131,18 @@ class InvoiceResponse(BaseModel):
 class InvoiceApprove(BaseModel):
     """POST /invoices/{id}/approve — what client sends"""
     notes: Optional[str] = None
+    action: Literal["APPROVE", "REJECT"] = "APPROVE"
+    rejection_reason: Optional[str] = None
     # NOT in body:
     # If-Match header → version check
     # X-Idempotency-Key header → idempotency
     # JWT → approver identity + SOX check
+
+    @model_validator(mode="after")
+    def validate_rejection_reason(self) -> "InvoiceApprove":
+        if self.action == "REJECT" and not self.rejection_reason:
+            raise ValueError("rejection_reason is required when action is REJECT")
+        return self
 
 
 class GLEntryLine(BaseModel):
