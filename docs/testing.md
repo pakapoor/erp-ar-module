@@ -73,8 +73,8 @@ The command runs the Python unit suite with statement and branch tracing and
 prints missing line numbers. It does not claim that `curl`-driven integration
 tests contribute Python line coverage; their evidence is the assertion matrix
 below. Rebuild with `docker compose build app` whenever test dependencies or
-the image-baked `tests/unit` files change. The verified suite contains 84 unit
-tests, reports 72.6% combined statement/branch coverage across `src`, and fails
+the image-baked `tests/unit` files change. The verified suite contains 126 unit
+tests, reports 82.3% combined statement/branch coverage across `src`, and fails
 if total coverage drops below 70%.
 
 The B6 suite uses a dedicated control customer, so its intentionally

@@ -3,7 +3,7 @@
 Comprehensive guide to all automated tests: unit tests, integration tests, and concurrency tests with descriptions, execution methods, and results.
 
 **Last Verified:** July 22, 2026  
-**Test Run Status:** ✅ All 225 checks passing (100% pass rate)
+**Test Run Status:** ✅ All 267 checks passing (100% pass rate)
 
 ---
 
@@ -11,14 +11,14 @@ Comprehensive guide to all automated tests: unit tests, integration tests, and c
 
 | Category | Tests | Assertions | Status | Pass Rate |
 |----------|-------|-----------|--------|-----------|
-| **Unit Tests** | 84 | 84 | ✅ PASS | 100% |
+| **Unit Tests** | 126 | 126 | ✅ PASS | 100% |
 | **Integration Tests** | 4 suites | 138 | ✅ PASS | 100% |
 | **Concurrency Tests** | 1 suite | 3 | ✅ PASS | 100% |
-| **Total** | **89** | **225** | **✅ PASS** | **100%** |
+| **Total** | **131** | **267** | **✅ PASS** | **100%** |
 
 ---
 
-## Unit Tests (84 tests, 84 assertions)
+## Unit Tests (126 tests, 126 assertions)
 
 All unit tests run with Python's `unittest` framework. External systems and database sessions are mocked at their boundaries.
 
@@ -31,12 +31,12 @@ All unit tests run with Python's `unittest` framework. External systems and data
 | Attribute | Details |
 |-----------|---------|
 | **File** | `tests/unit/test_auth.py` |
-| **Test Count** | 9 tests |
+| **Test Count** | 13 tests |
 | **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_auth` |
-| **Description** | Validates JWT token generation, signature verification, expiration, invalid tokens, role extraction, and RBAC enforcement across different tenant contexts. |
-| **Coverage** | 68.5% of `src/auth.py` |
-| **Status** | ✅ PASS (9/9) |
-| **Key Tests** | Token creation, signature validation, expiration enforcement, role verification, invalid header handling |
+| **Description** | Validates JWT token generation, signature verification, expiration, invalid tokens, role extraction, RBAC enforcement across different tenant contexts, JWKS cache fetch failure, and the kid-not-found refresh-and-retry path. |
+| **Coverage** | 90.7% of `src/auth.py` |
+| **Status** | ✅ PASS (13/13) |
+| **Key Tests** | Token creation, signature validation, expiration enforcement, role verification, invalid header handling, JWKS fetch 503, unknown kid 401 after cache refresh |
 
 ---
 
@@ -49,12 +49,12 @@ All unit tests run with Python's `unittest` framework. External systems and data
 | Attribute | Details |
 |-----------|---------|
 | **File** | `tests/unit/test_endpoints.py` |
-| **Test Count** | 9 tests |
+| **Test Count** | 15 tests |
 | **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_endpoints` |
-| **Description** | Tests router-level handlers for aging reports, delivery status, and journal entries with mocked database responses. Validates response formatting and error cases. |
-| **Coverage** | Partial coverage for `src/routers/aging.py`, `src/routers/delivery.py`, `src/routers/journal_entries.py` |
-| **Status** | ✅ PASS (9/9) |
-| **Key Tests** | Aging report formatting, delivery status retrieval, journal entry listing |
+| **Description** | Tests router-level handlers for aging reports, delivery status, journal entries, and health checks with mocked database responses. Validates response formatting, error cases, and the health endpoint's healthy/degraded/unhealthy branches (DB failure, stale MV, unpopulated MV, reconciliation mismatch, reconciliation query exception). |
+| **Coverage** | Partial coverage for `src/routers/aging.py`, `src/routers/delivery.py`, `src/routers/journal_entries.py`; 98.3% of `src/routers/health.py` |
+| **Status** | ✅ PASS (15/15) |
+| **Key Tests** | Aging report formatting, delivery status retrieval, journal entry listing, health DB failure -> unhealthy, stale MV -> degraded, reconciliation mismatch -> unhealthy |
 
 ---
 
@@ -124,9 +124,65 @@ All unit tests run with Python's `unittest` framework. External systems and data
 | **Test Count** | 11 tests |
 | **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_invoice_patch_reject` |
 | **Description** | Tests PATCH guard clauses (404, stale If-Match, non-DRAFT status, cached idempotent replay), the PATCH happy path (line-item replacement, total recalculation, rejection_reason cleared), reject guard clauses (SOX, non-DRAFT, stale version), the reject happy path (DRAFT persisted, `REJECTED` response label, no GL/delivery), and the full reject -> patch -> re-approve router-level chain. |
-| **Coverage** | Contributed most of `src/routers/invoices.py`'s rise from 24.9% to 56.8% |
+| **Coverage** | Contributed most of `src/routers/invoices.py`'s initial rise from 24.9% to 56.8% |
 | **Status** | ✅ PASS (11/11) |
 | **Key Tests** | Version conflict on stale If-Match, SOX violation on self-reject, INVALID_STATUS on non-DRAFT edit/reject, rejection_reason cleared by PATCH, reject response reports `REJECTED` while the DB row is DRAFT |
+
+---
+
+#### Test: `test_invoice_create.py`
+
+| Attribute | Details |
+|-----------|---------|
+| **File** | `tests/unit/test_invoice_create.py` |
+| **Test Count** | 4 tests |
+| **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_invoice_create` |
+| **Description** | Tests `POST /invoices` guard clauses (missing customer -> 404, cached idempotent replay, credit limit exceeded) and the happy path: server-calculated subtotal/tax/total/due_date, DRAFT status, version 1. |
+| **Coverage** | Contributed to `src/routers/invoices.py`'s rise from 56.8% to 72.8% |
+| **Status** | ✅ PASS (4/4) |
+| **Key Tests** | 404 on missing customer, CREDIT_LIMIT_EXCEEDED guard, server never trusts client-submitted totals |
+
+---
+
+#### Test: `test_get_invoice.py`
+
+| Attribute | Details |
+|-----------|---------|
+| **File** | `tests/unit/test_get_invoice.py` |
+| **Test Count** | 4 tests |
+| **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_get_invoice` |
+| **Description** | Tests `GET /invoices/{id}`: 404 on missing invoice, the full response shape (customer, line items, payment history, credit memo history, status history), status-history filtering (audit log entries with no actual status change are skipped), and the ETag header reflecting the current version. |
+| **Coverage** | Contributed to `src/routers/invoices.py`'s rise to 80.2% |
+| **Status** | ✅ PASS (4/4) |
+| **Key Tests** | 404 on missing invoice, all four history sections populate correctly, ETag equals version |
+
+---
+
+#### Test: `test_credit_memo_happy_path.py`
+
+| Attribute | Details |
+|-----------|---------|
+| **File** | `tests/unit/test_credit_memo_happy_path.py` |
+| **Test Count** | 2 tests |
+| **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_credit_memo_happy_path` |
+| **Description** | Tests `POST /invoices/{id}/credit-memos` happy paths: a full credit that exactly clears the outstanding AR balance and moves the invoice to PAID, and a credit larger than the outstanding balance that splits between AR reduction and a Customer Credit (GL 2100) liability. |
+| **Coverage** | Raised `src/routers/credit_memos.py` from 32.8% to 62.1% |
+| **Status** | ✅ PASS (2/2) |
+| **Key Tests** | Full credit reverses Revenue/Tax and zeroes AR, over-balance credit creates a customer-credit liability line |
+
+---
+
+#### Test: `test_payment_helpers.py`
+
+| Attribute | Details |
+|-----------|---------|
+| **File** | `tests/unit/test_payment_helpers.py` |
+| **Test Count** | 12 tests |
+| **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_payment_helpers` |
+| **Description** | Tests the standalone helper functions used by `POST /payments`: `get_exchange_rate` (same-currency short-circuit, missing-rate 503, prior-business-day warning), `auto_allocate` (FIFO ordering, exhaustion, no-open-invoices guard), `manual_allocate` (invoice-not-found, allocation-exceeds-balance guards, multi-invoice split), and `is_retryable_payment_conflict` (SQLSTATE 40001/40P01 recognition). |
+| **Coverage** | Modest rise in `src/routers/payments.py`; the `create_payment` endpoint body itself remains integration-tested only |
+| **Status** | ✅ PASS (12/12) |
+| **Key Tests** | FIFO allocates oldest due_date first and stops when exhausted, manual allocation rejects amounts exceeding invoice balance, retryable vs. non-retryable SQLSTATE classification |
 
 ---
 
@@ -139,12 +195,12 @@ All unit tests run with Python's `unittest` framework. External systems and data
 | Attribute | Details |
 |-----------|---------|
 | **File** | `tests/unit/test_router_helpers.py` |
-| **Test Count** | 14 tests |
+| **Test Count** | 18 tests |
 | **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_router_helpers` |
-| **Description** | Tests FIFO and manual payment allocation algorithms, GL journal line generation (normal, FX, credit memo), formatting utilities, and data transformation helpers. |
-| **Coverage** | Helper function coverage across payment and journal routers |
-| **Status** | ✅ PASS (14/14) |
-| **Key Tests** | FIFO payment allocation, manual allocation, GL line formatting, invoice-to-GL mapping |
+| **Description** | Tests FIFO and manual payment allocation algorithms, GL journal line generation (normal, FX, credit memo), formatting utilities, data transformation helpers, and Pydantic schema validation (currency codes, MANUAL/AUTO allocation consistency, allocation sum vs. payment amount). |
+| **Coverage** | Helper function coverage across payment and journal routers; 97.5% of `src/schemas.py` |
+| **Status** | ✅ PASS (18/18) |
+| **Key Tests** | FIFO payment allocation, manual allocation, GL line formatting, invoice-to-GL mapping, MANUAL allocation requires allocations, allocation sum cannot exceed payment amount |
 
 ---
 
@@ -400,10 +456,10 @@ docker compose exec -T app python -m unittest tests.unit.test_fx_rate_worker
 
 | Metric | Result | Status |
 |--------|--------|--------|
-| **Combined Coverage (Statement + Branch)** | **72.6%** | ✅ PASS (exceeds 70% gate) |
+| **Combined Coverage (Statement + Branch)** | **82.3%** | ✅ PASS (exceeds 70% gate) |
 | **Total Statements** | 1997 | |
-| **Statements Executed** | 1529 (76.6%) | |
-| **Statements Not Executed** | 468 (23.4%) | |
+| **Statements Executed** | 1700 (85.1%) | |
+| **Statements Not Executed** | 297 (14.9%) | |
 | **Total Branches** | 364 | |
 
 ### Coverage by Module

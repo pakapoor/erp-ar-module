@@ -105,9 +105,10 @@ Launch config: 'Debug FastAPI in Docker' (debugpy, port 5678)
 All debug scripts have --max-time 600 for breakpoint stepping
 
 ## Tests
-225 checks passing. 72.6% coverage (gate: 70%)
-Unit: tests/unit/ (84 tests, includes test_invoice_patch_reject.py)
-Integration: tests/integration/ (138 assertions across 4 suites, includes API3b reject/patch/re-approve in test_api.sh)
+267 checks passing. 82.3% coverage (gate: 70%)
+Unit: tests/unit/ (126 tests, includes test_invoice_patch_reject.py, test_invoice_create.py,
+      test_get_invoice.py, test_credit_memo_happy_path.py, test_payment_helpers.py)
+Integration: tests/integration/ (141 assertions across 4 suites + concurrency, includes API3b reject/patch/re-approve in test_api.sh)
 Concurrency: tests/concurrency/
 Run: ./deploy.sh --test OR ./tests/run_coverage.sh
 

@@ -10,7 +10,7 @@ from sqlalchemy.exc import DBAPIError
 from src.auth import CurrentUser
 from src.exceptions import BusinessRuleException, IdempotencyConflictException
 from src.routers import aging, delivery, health, invoices, payments
-from src.schemas import AllocationItem, InvoiceCreate, LineItemCreate, PaymentCreate
+from src.schemas import AllocationItem, InvoiceCreate, InvoiceUpdate, LineItemCreate, PaymentCreate
 
 
 class Result:
@@ -195,6 +195,33 @@ class SchemaNegativeTests(unittest.TestCase):
                 customer_id="c", payment_reference="p", amount=Decimal("10"),
                 currency="USD", payment_method="CASH", allocation_mode="AUTO",
             )
+
+    def test_manual_allocation_requires_allocations(self):
+        with self.assertRaisesRegex(ValueError, "allocations required when allocation_mode is MANUAL"):
+            PaymentCreate(
+                customer_id="c", payment_reference="p", amount=Decimal("10"),
+                currency="USD", payment_method="SWIFT", allocation_mode="MANUAL",
+            )
+
+    def test_auto_allocation_forbids_allocations(self):
+        with self.assertRaisesRegex(ValueError, "allocations must be null when allocation_mode is AUTO"):
+            PaymentCreate(
+                customer_id="c", payment_reference="p", amount=Decimal("10"),
+                currency="USD", payment_method="SWIFT", allocation_mode="AUTO",
+                allocations=[AllocationItem(invoice_id="i", amount=Decimal("10"))],
+            )
+
+    def test_manual_allocations_cannot_exceed_payment_amount(self):
+        with self.assertRaisesRegex(ValueError, "sum of allocations cannot exceed payment amount"):
+            PaymentCreate(
+                customer_id="c", payment_reference="p", amount=Decimal("10"),
+                currency="USD", payment_method="SWIFT", allocation_mode="MANUAL",
+                allocations=[AllocationItem(invoice_id="i", amount=Decimal("15"))],
+            )
+
+    def test_invoice_update_currency_none_is_left_unset(self):
+        update = InvoiceUpdate(po_reference="new-po")
+        self.assertIsNone(update.currency)
 
 
 if __name__ == "__main__":

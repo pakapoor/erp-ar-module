@@ -47,6 +47,35 @@ class ECBParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "positive and finite"):
             parse_ecb_csv(HEADER + invalid)
 
+    def test_rejects_missing_csv_columns(self) -> None:
+        with self.assertRaisesRegex(ValueError, "missing required CSV columns"):
+            parse_ecb_csv("CURRENCY,OBS_VALUE\nUSD,1.1435\n")
+
+    def test_rejects_non_eur_denominator(self) -> None:
+        invalid = ROWS.replace("USD,EUR,2026-07-17,1.1435,A", "USD,USD,2026-07-17,1.1435,A")
+        with self.assertRaisesRegex(ValueError, "denominator for USD is not EUR"):
+            parse_ecb_csv(HEADER + invalid)
+
+    def test_rejects_duplicate_currency_quote(self) -> None:
+        duplicated = HEADER + ROWS + "USD,EUR,2026-07-17,1.2,A\n"
+        with self.assertRaisesRegex(ValueError, "duplicate USD quote"):
+            parse_ecb_csv(duplicated)
+
+    def test_rejects_unparseable_quote_value(self) -> None:
+        invalid = ROWS.replace("USD,EUR,2026-07-17,1.1435,A", "USD,EUR,2026-07-17,not-a-number,A")
+        with self.assertRaisesRegex(ValueError, "Invalid ECB quote for USD"):
+            parse_ecb_csv(HEADER + invalid)
+
+    def test_rejects_unavailable_obs_status(self) -> None:
+        invalid = ROWS.replace("USD,EUR,2026-07-17,1.1435,A", "USD,EUR,2026-07-17,1.1435,M")
+        with self.assertRaisesRegex(ValueError, "not available"):
+            parse_ecb_csv(HEADER + invalid)
+
+    def test_derive_base_rates_requires_inr_anchor(self) -> None:
+        quotes = {"USD": Decimal("1.1435"), "CAD": Decimal("1.6035")}
+        with self.assertRaisesRegex(ValueError, "missing the INR anchor"):
+            derive_base_rates(quotes)
+
 
 if __name__ == "__main__":
     unittest.main()

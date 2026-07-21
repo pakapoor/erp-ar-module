@@ -24,7 +24,7 @@ Five bonus APIs -- implemented:
 - POST /invoices/{id}/void (FR-B3)
 - POST /invoices/{id}/approve now also accepts `action: REJECT` (reverts to DRAFT for correction)
 
-225 checks passing. 72.6% code coverage.
+267 checks passing. 82.3% code coverage.
 
 Open: [requirements-traceability.md](requirements-traceability.md)
 

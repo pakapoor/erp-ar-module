@@ -14,7 +14,7 @@ from src.exceptions import (
     PeriodClosedException,
     VersionConflictException,
 )
-from src.routers import aging, delivery, journal_entries
+from src.routers import aging, delivery, health, journal_entries
 
 
 class Result:
@@ -166,6 +166,82 @@ class MainAndRBACUnitTests(unittest.IsolatedAsyncioTestCase):
 
         response = await main.trace_id_middleware(request, call_next)
         self.assertEqual(response.headers["X-Trace-ID"], "request-1")
+
+
+class HealthEndpointTests(unittest.IsolatedAsyncioTestCase):
+    async def test_db_connectivity_failure_is_unhealthy(self):
+        db = AsyncMock()
+        db.execute.side_effect = Exception("connection refused")
+        response = await health.health_check(db)
+        self.assertEqual(response.status_code, 503)
+        body = response.body.decode()
+        self.assertIn('"status":"unhealthy"', body.replace(" ", ""))
+        self.assertIn("connection refused", body)
+
+    async def test_stale_materialized_view_is_degraded(self):
+        db = AsyncMock()
+        db.execute.side_effect = [
+            Result(),                                          # SELECT 1
+            Result(SimpleNamespace(age_minutes=15.0)),          # MV freshness
+            Result(SimpleNamespace(max_entity_diff=0, mismatched_entities=0, subledger_balance=0, gl_balance=0)),
+        ]
+        response = await health.health_check(db)
+        self.assertEqual(response.status_code, 503)
+        body = response.body.decode().replace(" ", "")
+        self.assertIn('"status":"degraded"', body)
+        self.assertIn('"materialized_view_status":"stale"', body)
+
+    async def test_unpopulated_materialized_view_reports_not_populated(self):
+        db = AsyncMock()
+        db.execute.side_effect = [
+            Result(),                # SELECT 1
+            Result(None),            # MV freshness: no row
+            Result(SimpleNamespace(max_entity_diff=0, mismatched_entities=0, subledger_balance=0, gl_balance=0)),
+        ]
+        response = await health.health_check(db)
+        body = response.body.decode().replace(" ", "")
+        self.assertIn('"materialized_view_status":"not_populated"', body)
+
+    async def test_reconciliation_mismatch_is_unhealthy(self):
+        db = AsyncMock()
+        db.execute.side_effect = [
+            Result(),                                          # SELECT 1
+            Result(SimpleNamespace(age_minutes=1.0)),           # MV freshness
+            Result(SimpleNamespace(
+                max_entity_diff=10.0, mismatched_entities=1,
+                subledger_balance=100, gl_balance=90,
+            )),
+        ]
+        response = await health.health_check(db)
+        self.assertEqual(response.status_code, 503)
+        body = response.body.decode().replace(" ", "")
+        self.assertIn('"status":"unhealthy"', body)
+        self.assertIn('"reconciliation_status":"MISMATCH"', body)
+        self.assertIn('"reconciliation_diff":10.0', body)
+
+    async def test_reconciliation_query_exception_reports_unknown(self):
+        db = AsyncMock()
+        db.execute.side_effect = [
+            Result(),                                 # SELECT 1
+            Result(SimpleNamespace(age_minutes=1.0)),  # MV freshness
+            Exception("relation does not exist"),
+        ]
+        response = await health.health_check(db)
+        body = response.body.decode().replace(" ", "")
+        self.assertIn('"reconciliation_status":"unknown:relationdoesnotexist"', body)
+
+    async def test_healthy_returns_200(self):
+        db = AsyncMock()
+        db.execute.side_effect = [
+            Result(),
+            Result(SimpleNamespace(age_minutes=1.0)),
+            Result(SimpleNamespace(max_entity_diff=0, mismatched_entities=0, subledger_balance=0, gl_balance=0)),
+        ]
+        response = await health.health_check(db)
+        self.assertEqual(response.status_code, 200)
+        body = response.body.decode().replace(" ", "")
+        self.assertIn('"status":"healthy"', body)
+        self.assertIn('"reconciliation_status":"MATCHED"', body)
 
 
 if __name__ == "__main__":
