@@ -23,8 +23,8 @@ Expected: eight services are running:
 | `db` | `erp_db` | Up (healthy) | PostgreSQL with pg_cron on port 5432 |
 | `stub` | `erp_stub` | Up | JWKS and delivery console stub on port 9000 |
 | `localstack` | `erp_localstack` | Up (healthy) | Local Standard SQS and DLQ on port 4566 |
-| `outbox_publisher` | `erp_outbox_publisher` | Up | PostgreSQL outbox ?' SQS relay |
-| `delivery_worker` | `erp_delivery_worker` | Up | SQS ?' idempotent adapter consumer |
+| `outbox_publisher` | `erp_outbox_publisher` | Up | PostgreSQL outbox -> SQS relay |
+| `delivery_worker` | `erp_delivery_worker` | Up | SQS -> idempotent adapter consumer |
 | `fx_rate_worker` | `erp_fx_rate_worker` | Up | ECB reference-rate importer |
 
 Quick health checks:
@@ -103,7 +103,7 @@ void and write-off still require their extended acceptance matrices.
 | API1 stale FX rate | HTTP 503; no invoice is created and the transaction rolls back |
 | API3 foreign-currency approval | USD invoice becomes APPROVED version 2; one journal balances independently in USD transaction amounts and INR base amounts |
 | API4 foreign-currency gain | Full USD receipt at a higher payment-date rate clears AR and credits the exact realized INR FX gain |
-| API4 foreign-currency loss/partial | Two lower-rate receipts move APPROVED ?' PARTIALLY_PAID ?' PAID, debit both realized INR losses and leave zero AR |
+| API4 foreign-currency loss/partial | Two lower-rate receipts move APPROVED -> PARTIALLY_PAID -> PAID, debit both realized INR losses and leave zero AR |
 | API4 FX controls | Cross-currency allocation returns 422; stale payment rate returns 503 and rolls back |
 | API2 `GET /invoices/{id}` | HTTP 200; same invoice and two line items; ETag reflects the current version |
 | API3 `POST /invoices/{id}/approve` | HTTP 200; APPROVED version 2; approval journal ID returned; delivery status QUEUED on a fresh run |
@@ -144,7 +144,7 @@ void and write-off still require their extended acceptance matrices.
 | At-least-once duplicate | Stub accepts the durable event once and returns its cached result on replay |
 | SQS failure/DLQ | Three adapter failures make the event DEAD and redrive its message to the DLQ |
 | Delivery/financial boundary | Invoice remains APPROVED and its one balanced GL entry remains committed while delivery is DEAD |
-| CFO retry | DEAD ?' PENDING ?' DELIVERED; invoice becomes SENT without repeating accounting |
+| CFO retry | DEAD -> PENDING -> DELIVERED; invoice becomes SENT without repeating accounting |
 
 The final line must be:
 
@@ -238,7 +238,7 @@ Expected:
   inserts one daily `fx_import_job`
 
 The FX worker claims the import, validates one coherent ECB batch, derives
-foreign?'INR pairs, and stores tenant-approved immutable rows. The walkthrough
+foreign->INR pairs, and stores tenant-approved immutable rows. The walkthrough
 then proves the complete B1 V1 accounting path: invoice/approval snapshots,
 payment-date rates, realized gains and losses, partial settlement, stale-rate
 rollback and mixed-currency rejection.
@@ -268,7 +268,7 @@ ORDER BY effective_date DESC, from_currency;
 ```
 
 On a successful import, the latest job is `COMPLETED` and the configured tenant
-has seven approved foreign?'INR rows. A weekend request legitimately uses the
+has seven approved foreign->INR rows. A weekend request legitimately uses the
 preceding Friday within the three-day policy.
 
 Execution history:

@@ -1,4 +1,4 @@
-# Claude Session Context Ñ ERP AR Module Debug Session
+# Claude Session Context -- ERP AR Module Debug Session
 Generated: 2026-07-22
 
 ## Project
@@ -57,7 +57,7 @@ FX: fx_rate_worker ingests ECB rates, staleness enforced
    2_get_invoice.sh      -- no arg: both invoices; with arg: specific UUID
    3_approve_invoice.sh  -- no arg: approves both; with arg: specific UUID
    3_2_reject_invoice.sh -- rejects invoice (created by VSCode agent)
-   3_2_patch_invoice.sh  -- patches DRAFT invoice (created by VSCode agent)
+   3_1_patch_invoice.sh  -- patches DRAFT invoice (created by VSCode agent)
    4_pay_invoice.sh      -- requires amount arg, AUTO/FIFO, NEFT method
    5_journal_entries.sh  -- no arg: both invoices; with arg: specific UUID
 
@@ -86,7 +86,7 @@ docker compose logs stub -f               # see 2 x delivery banners
 ## Reject -> Edit -> Reapprove Flow
 ./debug/invoice/1_create_invoice.sh
 ./debug/invoice/3_2_reject_invoice.sh <invoice_id>   # back to DRAFT
-./debug/invoice/3_2_patch_invoice.sh <invoice_id>    # fix it
+./debug/invoice/3_1_patch_invoice.sh <invoice_id>    # fix it
 ./debug/invoice/3_approve_invoice.sh <invoice_id>    # reapprove
 
 ## DB Connection
@@ -119,6 +119,6 @@ Logs: emoji banner with invoice_id, amount, customer, due_date
 
 ## Pending / Known
 - FRs.md mentions reject but was not in original implementation -- now done
-- 3_2_patch_invoice.sh and 3_2_reject_invoice.sh created by VSCode agent -- not yet verified by Claude
+- 3_1_patch_invoice.sh and 3_2_reject_invoice.sh created by VSCode agent -- not yet verified by Claude
 - rejection_reason clearing in PATCH confirmed in code review
 - All changes committed to main and pushed

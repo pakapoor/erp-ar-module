@@ -1,7 +1,7 @@
 # FX Rate Ingestion and Multi-Currency Design
 
 **Traceability:** DA3 / B1  
-**Status:** `COMPLETE` for the approved V1 scope ?" ingestion, invoice-date and
+**Status:** `COMPLETE` for the approved V1 scope -- ingestion, invoice-date and
 payment-date rate locking, dual-currency journals, realized gain/loss, partial
 payments and all fail-closed controls are implemented and tested
 
@@ -58,9 +58,9 @@ ECB represents:
 For a foreign currency `F`, the worker derives the INR accounting rate as:
 
 ```text
-F ?' INR = (INR per EUR) / (F per EUR)
-EUR ?' INR = INR per EUR
-INR ?' INR = 1 (derived internally; no provider row required)
+F -> INR = (INR per EUR) / (F per EUR)
+EUR -> INR = INR per EUR
+INR -> INR = 1 (derived internally; no provider row required)
 ```
 
 ## Persistence
