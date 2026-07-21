@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Attach to FastAPI in Docker",
+      "name": "Debug FastAPI in Docker",
       "type": "debugpy",
       "request": "attach",
       "connect": {
@@ -17,7 +17,8 @@
         }
       ],
       "jinja": true,
-      "justMyCode": true
+      "justMyCode": true,
+      "preLaunchTask": "Start Debug Stack"
     }
   ]
 }
