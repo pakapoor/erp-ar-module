@@ -1,4 +1,4 @@
-# Design Tradeoffs ?" ERP AR Module
+# Design Tradeoffs
 
 Every significant design decision with options considered, tradeoffs weighed, and choice made.
 
