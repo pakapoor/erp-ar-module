@@ -22,13 +22,15 @@ TOKEN=$(docker compose exec -T app python -c "from src.auth import create_test_t
 approve_invoice() {
   local INVOICE_ID=$1
   local IDEM="debug-approve-$INVOICE_ID-$(date +%s)"
+  local VERSION
+  VERSION=$(curl -s "$BASE_URL/invoices/$INVOICE_ID" -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
   echo ""
-  echo "=== Approving Invoice: $INVOICE_ID ==="
+  echo "=== Approving Invoice: $INVOICE_ID (version $VERSION) ==="
   curl -s --max-time 600 -X POST "$BASE_URL/invoices/$INVOICE_ID/approve" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $TOKEN" \
     -H "X-Idempotency-Key: $IDEM" \
-    -H "If-Match: 1" \
+    -H "If-Match: $VERSION" \
     -d '{"notes": "Approved in debug session"}' | python3 -m json.tool
 }
 

@@ -25,13 +25,15 @@ reject_invoice() {
   local IDEM="debug-reject-$INVOICE_ID-$(date +%s)"
   local PAYLOAD
   PAYLOAD=$(python3 -c "import json,sys; print(json.dumps({'action': 'REJECT', 'rejection_reason': sys.argv[1]}))" "$REASON")
+  local VERSION
+  VERSION=$(curl -s "$BASE_URL/invoices/$INVOICE_ID" -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
   echo ""
-  echo "=== Rejecting Invoice: $INVOICE_ID ==="
+  echo "=== Rejecting Invoice: $INVOICE_ID (version $VERSION) ==="
   curl -s --max-time 600 -X POST "$BASE_URL/invoices/$INVOICE_ID/approve" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $TOKEN" \
     -H "X-Idempotency-Key: $IDEM" \
-    -H "If-Match: 1" \
+    -H "If-Match: $VERSION" \
     -d "$PAYLOAD" | python3 -m json.tool
 }
 
