@@ -138,7 +138,6 @@ See [Test Results](docs/tests.md) for full breakdown.
 - [Walkthrough](docs/walkthrough.md) -- full narrative, one transaction end-to-end, Q&A
 - [Requirements Traceability](docs/requirements-traceability.md) -- what is implemented vs deferred
 - [Experience Showcase](docs/experience-showcase.md) -- Meta and Lenovo context for design decisions
-- [Assessment Submission](docs/assessment-submission.md) -- consolidated narrative
 - [Deployment Guide](docs/deployment.md) -- local setup and troubleshooting
 
 ---
