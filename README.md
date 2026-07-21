@@ -6,11 +6,25 @@ Multi-tenant Invoicing and Accounts Receivable module for mid-market ERP systems
 
 ## Quick Start
 
+| Command | What it does |
+|---------|-------------|
+| `./deploy.sh` | Build images and start all 8 services |
+| `./deploy.sh --no-build` | Start services reusing existing images (faster) |
+| `./deploy.sh --seed` | Start services and load demo data |
+| `./deploy.sh --test` | Start services and run full integration suite |
+| `./deploy.sh --seed --test` | Start, seed demo data, then run tests |
+| `./deploy.sh --no-build --test` | Skip rebuild, run tests against running stack |
+| `./tests/run_coverage.sh` | Run unit tests with 70% coverage gate |
+
+First time setup (builds everything and verifies):
 ```bash
-./deploy.sh --test
+./deploy.sh --seed --test
 ```
 
-This starts eight services and runs the full test suite.
+Day-to-day (already built, just restart):
+```bash
+./deploy.sh --no-build
+```
 
 ---
 
@@ -72,18 +86,51 @@ Key decisions:
 
 ---
 
-## Testing
+## Tests
 
-```
-135 tests passing
-70.9% code coverage
+**200 checks passing. 70.9% code coverage.**
 
-Integration:  test_api.sh                  (required APIs + accounting assertions)
-              test_credit_memo.sh          (FR-B1 credit memo controls)
-              test_delivery_sqs.sh         (outbox -> SQS -> DLQ flow)
-              test_api_negative.sh         (JWT attacks, hostile inputs)
-Concurrency:  test_payment_concurrency.sh  (double-allocation race)
-Unit:         tests/unit/                  (73 unit tests, pytest)
+### Integration tests (127 assertions)
+
+| Suite | Assertions | What it tests |
+|-------|-----------|---------------|
+| `tests/integration/test_api.sh` | 62 | All 6 required APIs, FX invoices/payments, accounting correctness, idempotency, cross-tenant isolation, AR-to-GL reconciliation |
+| `tests/integration/test_api_negative.sh` | 34 | Malformed JWTs, bad headers, hostile JSON, post-burst health check |
+| `tests/integration/test_credit_memo.sh` | 17 | Credit memo entity isolation, idempotency, concurrent over-credit, paid/partial invoices, FX and GL balance |
+| `tests/integration/test_delivery_sqs.sh` | 11 | Outbox -> SQS -> consumer flow, DLQ redrive, downstream deduplication, CFO retry of DEAD event |
+| `tests/concurrency/test_payment_concurrency.sh` | 3 | Two concurrent payments race AUTO and MANUAL allocation -- exactly one commits, loser gets 409 |
+
+### Unit tests (73 tests)
+
+| File | What it covers |
+|------|---------------|
+| `test_auth.py` | JWT validation, RBAC, kid lookup, token expiry |
+| `test_endpoints.py` | API response shapes and status codes |
+| `test_financial_guards.py` | SOX checks, period close, credit limit, idempotency guards |
+| `test_fx_rate_worker.py` | ECB rate ingestion, staleness, currency pairs |
+| `test_invoice_fx.py` | FX invoice creation, base currency amounts |
+| `test_router_helpers.py` | Aging builder, health reconciliation logic |
+| `test_seed_and_database.py` | Seed data integrity, RLS enforcement |
+| `test_worker_persistence.py` | Outbox persistence, crash recovery |
+| `test_workers.py` | SQS consumer, publisher, DLQ redrive |
+
+### Coverage (verified 20 July 2026)
+
+| Module | Coverage |
+|--------|---------|
+| `src/routers/aging.py` | 100% |
+| `src/routers/delivery.py` | 98% |
+| `src/routers/journal_entries.py` | 96% |
+| `src/seed_data.py` | 94% |
+| `src/main.py` | 89% |
+| `src/delivery_worker.py` | 87% |
+| `src/routers/health.py` | 81% |
+| `src/fx_rate_worker.py` | 79% |
+| Overall | **70.9% (gate: 70%)** |
+
+Run coverage:
+```bash
+./tests/run_coverage.sh
 ```
 
 ---
