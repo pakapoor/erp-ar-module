@@ -226,6 +226,7 @@ async def create_invoice(
     current_user: CurrentUser = Depends(require_role("invoice_creator", "cfo", "system_admin")),
     db: AsyncSession = Depends(get_db),
 ):
+    # 🔴 BREAKPOINT 1: Entry point - request received
     await db.execute(
         text("""
             SELECT
@@ -241,10 +242,12 @@ async def create_invoice(
     )
 
     # ── Idempotency check ──────────────────────────────────
+    # 🔴 BREAKPOINT 2: Hash the request payload
     request_hash = hashlib.sha256(
         json.dumps(payload.model_dump(), default=str).encode()
     ).hexdigest()
 
+    # 🔴 BREAKPOINT 3: Check if this idempotency key already exists
     existing = await check_idempotency(
         db, x_idempotency_key, current_user.tenant_id, current_user.entity_id,
         "POST /invoices", request_hash
@@ -256,6 +259,7 @@ async def create_invoice(
         )
 
     # ── Validate customer exists and belongs to tenant ─────
+    # 🔴 BREAKPOINT 4: Look up customer (RLS enforced)
     result = await db.execute(
         select(Customer).where(
             and_(
@@ -266,6 +270,7 @@ async def create_invoice(
             )
         )
     )
+    # 🔴 BREAKPOINT 5: Inspect customer object
     customer = result.scalar_one_or_none()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
@@ -278,6 +283,7 @@ async def create_invoice(
             )
         )
     )
+    # 🔴 BREAKPOINT 6: Get entity's base currency (e.g., USD)
     base_currency = entity_currency_result.scalar_one()
 
     # ── Begin ACID transaction ─────────────────────────────
@@ -287,6 +293,7 @@ async def create_invoice(
     )
 
     # ── Calculate totals ───────────────────────────────────
+    # 🔴 BREAKPOINT 7: Loop through line items and calculate totals
     subtotal_total = 0
     tax_total = 0
     line_items_data = []
@@ -302,11 +309,13 @@ async def create_invoice(
             "total_price": total_price,
         })
 
+    # 🔴 BREAKPOINT 8: Check calculated totals
     grand_total = subtotal_total + tax_total
     due_date = calculate_due_date(payload.invoice_date, payload.payment_terms)
 
     # Snapshot the approved rate and all base-currency values. Later rate
     # imports cannot rewrite the accounting value of this invoice.
+    # 🔴 BREAKPOINT 9: Resolve FX rate (immutable snapshot)
     exchange_rate_id, exchange_rate = await resolve_invoice_exchange_rate(
         db,
         current_user.tenant_id,
@@ -314,12 +323,14 @@ async def create_invoice(
         base_currency,
         payload.invoice_date,
     )
+    # 🔴 BREAKPOINT 10: Convert amounts to base currency
     base_subtotal_total = convert_to_base(subtotal_total, exchange_rate)
     base_tax_total = convert_to_base(tax_total, exchange_rate)
     base_grand_total = base_subtotal_total + base_tax_total
 
     # ── Credit limit check ─────────────────────────────────
     # Sum outstanding AR for this customer
+    # 🔴 BREAKPOINT 11: Query outstanding invoices
     outstanding_result = await db.execute(
         select(text("COALESCE(SUM(base_balance_amount), 0)")).select_from(Invoice).where(
             and_(
@@ -330,6 +341,7 @@ async def create_invoice(
             )
         )
     )
+    # 🔴 BREAKPOINT 12: Check if credit limit would be exceeded
     outstanding = outstanding_result.scalar() or 0
     if customer.credit_limit > 0 and (outstanding + base_grand_total) > customer.credit_limit:
         raise BusinessRuleException(
@@ -339,6 +351,7 @@ async def create_invoice(
 
     # ── Get exchange rate ──────────────────────────────────
     # ── Create invoice ─────────────────────────────────────
+    # 🔴 BREAKPOINT 13: Create Invoice object (in memory, not saved yet)
     invoice = Invoice(
         tenant_id=current_user.tenant_id,
         entity_id=current_user.entity_id,
@@ -364,9 +377,11 @@ async def create_invoice(
         created_by=current_user.user_id,
     )
     db.add(invoice)
+    # 🔴 BREAKPOINT 14: After flush, invoice.id is assigned
     await db.flush()  # get invoice.id
 
     # ── Create line items ──────────────────────────────────
+    # 🔴 BREAKPOINT 15: Create line items (linked to invoice.id)
     for i, (line, totals) in enumerate(zip(payload.line_items, line_items_data)):
         line_item = InvoiceLineItem(
             tenant_id=current_user.tenant_id,
@@ -385,6 +400,7 @@ async def create_invoice(
 
     await db.flush()
 
+    # 🔴 BREAKPOINT 16: Fetch saved line items for response
     line_items_result = await db.execute(
         select(InvoiceLineItem)
         .where(InvoiceLineItem.invoice_id == invoice.id)
@@ -393,6 +409,7 @@ async def create_invoice(
     saved_line_items = line_items_result.scalars().all()
 
     # ── Build response ─────────────────────────────────────
+    # 🔴 BREAKPOINT 17: Build JSON response object
     response_body = {
         "id": invoice.id,
         "status": invoice.status,
@@ -436,6 +453,7 @@ async def create_invoice(
     }
 
     # ── Complete idempotency key ───────────────────────────
+    # 🔴 BREAKPOINT 18: Mark request as COMPLETED in idempotency table
     await complete_idempotency_key(
         db,
         x_idempotency_key,
@@ -445,9 +463,11 @@ async def create_invoice(
         201,
         response_body,
     )
+    # 🔴 BREAKPOINT 19: COMMIT all changes (invoice + lines + idempotency key)
     await db.commit()
 
     logger.info(f"Invoice {invoice.id} created by {current_user.user_id}")
+    # 🔴 BREAKPOINT 20: Return HTTP 201 with response body
     return JSONResponse(status_code=201, content=response_body)
 
 
