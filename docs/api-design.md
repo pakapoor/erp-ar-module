@@ -109,10 +109,10 @@ status, balance, payment allocation, and credit memo changes.
 202 -- accepted (async bulk operations)
 400 -- bad request (validation failed)
 401 -- unauthorized (invalid/expired JWT)
-403 -- forbidden (wrong role or SOX violation)
+403 -- forbidden (wrong role)
 404 -- not found
 409 -- conflict (version mismatch / request in progress / idempotency key misuse)
-422 -- unprocessable (business rule violation)
+422 -- unprocessable (business rule violation, including SOX_VIOLATION)
 423 -- locked (accounting period closed/locked)
 500 -- server error
 ```
@@ -142,7 +142,7 @@ GET /jobs/{job_id}
 
 Creates a new invoice in DRAFT status.
 
-**Required role:** `invoice_creator`
+**Required role:** `invoice_creator` (also `cfo` or `system_admin`)
 
 ### Request
 
@@ -476,13 +476,13 @@ to SENT; a later payment status is never overwritten.
 
 ```
 403 -- user lacks invoice_approver role
-403 -- approver same as creator (SOX violation!)
-      "Creator cannot approve their own invoice"
 404 -- invoice not found
 409 -- REQUEST_IN_PROGRESS (same request is still processing)
 409 -- IDEMPOTENCY_KEY_REUSED (same key, different request payload)
 409 -- If-Match version mismatch (ABA problem!)
       "Invoice was modified since last viewed. Please refresh."
+422 -- SOX_VIOLATION -- approver same as creator
+      "Invoice creator cannot approve their own invoice"
 422 -- invoice not in DRAFT status
       "Cannot approve invoice with status: APPROVED"
 423 -- accounting period CLOSED or LOCKED
@@ -703,23 +703,27 @@ Content-Type: application/json
 ```json
 {
   "id": "uuid-1001",
-  "status": "DRAFT",
+  "status": "REJECTED",
   "version": 2,
-  "action": "REJECT",
   "rejected_by": "priya-uuid",
   "rejected_at": "2026-07-22T10:00:00Z",
   "rejection_reason": "Tax rate incorrect -- should be 12% not 18% for this category"
 }
 ```
 
+The response reports `"status": "REJECTED"` as an outcome label for the
+caller -- the underlying invoice row is written back as `DRAFT` (see step 5
+above and the lifecycle diagram below), which is what a subsequent `GET
+/invoices/{id}` returns. There is no `action` field in the response body.
+
 ### Error Cases
 
 ```
 400  action == REJECT but rejection_reason is missing or blank
 403  user lacks invoice_approver role
-403  rejector same as creator (SOX violation)
 404  invoice not found
 409  If-Match version mismatch
+422  SOX_VIOLATION -- rejector same as creator
 422  invoice not in DRAFT status
 ```
 

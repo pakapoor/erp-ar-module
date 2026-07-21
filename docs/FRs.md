@@ -810,11 +810,16 @@ approving an invoice.
 
 **Roles:**
 ```
-invoice_creator   -- create/edit draft invoices
+invoice_creator   -- create/edit draft invoices; POST /invoices also
+                     accepts cfo and system_admin
 invoice_approver  -- approve/reject invoices
 payment_recorder  -- record payments
-cfo               -- write-offs and financial administration
-auditor           -- read-only access to financial APIs
+cfo               -- write-offs and financial administration; can also
+                     create invoices and approve/reject as invoice_approver
+system_admin      -- allowed on POST /invoices alongside invoice_creator
+auditor           -- defined in the role CHECK constraint; not yet wired
+                     to any read-only endpoint (`require_role` call) --
+                     see requirements-traceability.md
 ```
 
 **Example:**

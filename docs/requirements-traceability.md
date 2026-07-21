@@ -31,7 +31,7 @@ labels them required prototype endpoints/functionality.
 | WP5 | `GET /customers/{id}/aging` with current/30/60/90+ | Complete | Implemented and tested | `COMPLETE` | PostgreSQL MV, pg_cron refresh and freshness timestamp |
 | WP6 | `GET /journal-entries?invoice={id}` | Complete | Implemented and pagination-tested | `COMPLETE` | Balanced entries and invoice-wide AR summary verified |
 | WP7 | Multi-tenant isolation | Complete | Tenant and entity denial tests pass | `COMPLETE` | JWT-derived scope plus application filters; production RLS hardening tracked under NFR3 |
-| WP8 | Validated invoice state transitions | Complete | Core create/approve/send/pay path tested | `COMPLETE` | Bonus void/write-off routes exist but remain outside this required, tested claim |
+| WP8 | Validated invoice state transitions | Complete | Core create/approve/send/pay path tested | `COMPLETE` | Bonus void/write-off routes exist but remain outside this required, tested claim. `PATCH /invoices/{id}` and the reject branch (`action: REJECT` on approve) are covered by `tests/unit/test_invoice_patch_reject.py` (11 tests: guard clauses, SOX, version conflicts, happy paths) and `tests/integration/test_api.sh` (API3b: reject -> patch -> re-approve, role checks, idempotency replay) as of 2026-07-22 |
 | WP9 | Automatic GL entry generation on approval | Complete | Balanced journal tested | `COMPLETE` | AR, Revenue and Tax Payable lines |
 | WP10 | FIFO or manual payment allocation | Complete | Both modes implemented; AUTO path tested in walkthrough | `COMPLETE` | MANUAL also exercised by overpayment control |
 | WP11 | Basic audit logging | Complete | DB triggers active during tested writes | `COMPLETE` | Actor and old/new row data captured; immutability hardening is NFR4 |
@@ -49,7 +49,7 @@ labels them required prototype endpoints/functionality.
 | DA7 | Partial payments and overpayments | Complete | Implemented/tested | `COMPLETE` | Unapplied amount credits Customer Credit liability, not AR |
 | DA8 | Credit memo application and write-off procedures | Complete | Credit memo extended matrix complete; write-off INR happy path passes | `PARTIAL` | Complete write-off entity/FX/concurrency/idempotency/direct-journal tests |
 | DA9 | Lifecycle states and transition rules | Complete | Core path tested; bonus terminal paths implemented | `COMPLETE` | DRAFT, APPROVED, SENT, PARTIALLY_PAID and PAID tested; VOID/WRITTEN_OFF verification tracked under B6--B8 |
-| DA10 | Operations allowed in each state | Complete | Core write guards implemented | `COMPLETE` | Approved invoices are not edited in place; amendment paths are documented |
+| DA10 | Operations allowed in each state | Complete | Core write guards implemented | `COMPLETE` | Approved invoices are not edited in place; amendment paths are documented. The DRAFT-only edit guard on `PATCH /invoices/{id}` (and the reject-to-DRAFT transition) is now tested -- see WP8 |
 | DA11 | Key API request/response contracts | Complete | Six required APIs implemented | `COMPLETE` | `docs/api-design.md` |
 | DA12 | Payment idempotency approach | Complete | Implemented/tested | `COMPLETE` | Entity-scoped key, request hash, cached response and payment-reference uniqueness |
 | DA13 | Batch invoicing/bulk payment approach | Complete | No bulk API required | `DESIGN COMPLETE` | Async bounded jobs, per-item idempotency and retry are documented as V2 |

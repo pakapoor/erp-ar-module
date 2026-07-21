@@ -73,8 +73,8 @@ The command runs the Python unit suite with statement and branch tracing and
 prints missing line numbers. It does not claim that `curl`-driven integration
 tests contribute Python line coverage; their evidence is the assertion matrix
 below. Rebuild with `docker compose build app` whenever test dependencies or
-the image-baked `tests/unit` files change. The verified suite contains 73 unit
-tests, reports 70.9% combined statement/branch coverage across `src`, and fails
+the image-baked `tests/unit` files change. The verified suite contains 84 unit
+tests, reports 72.6% combined statement/branch coverage across `src`, and fails
 if total coverage drops below 70%.
 
 The B6 suite uses a dedicated control customer, so its intentionally
@@ -108,6 +108,9 @@ void and write-off still require their extended acceptance matrices.
 | API2 `GET /invoices/{id}` | HTTP 200; same invoice and two line items; ETag reflects the current version |
 | API3 `POST /invoices/{id}/approve` | HTTP 200; APPROVED version 2; approval journal ID returned; delivery status QUEUED on a fresh run |
 | Delivery outbox | Approval event reaches DELIVERED within 10 seconds; stub receives the stable delivery-event ID |
+| API3b reject | HTTP 200; DRAFT persisted with `rejection_reason` stored, version+1, no GL entry, no journal entries; role guard (403) enforced |
+| API3b patch | HTTP 200; DRAFT-only, line items replaced, totals recalculated, `rejection_reason` cleared, version+1; role guard (403) enforced |
+| API3b re-approve | HTTP 200; APPROVED, GL entry posted (only one journal entry total, since the earlier reject posted none); PATCH refused (422) once APPROVED; idempotency replay returns the cached reject response |
 | API4 `POST /payments` | HTTP 201; INR 100,000 allocated; invoice becomes PARTIALLY_PAID with INR 74,000 balance |
 | API4 same-key retry | Original payment ID and response are returned; no second payment is created |
 | API5 customer aging | HTTP 200; current bucket contains one posted invoice totaling INR 74,000; foreign DRAFT invoices are excluded |

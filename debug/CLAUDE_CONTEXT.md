@@ -105,9 +105,9 @@ Launch config: 'Debug FastAPI in Docker' (debugpy, port 5678)
 All debug scripts have --max-time 600 for breakpoint stepping
 
 ## Tests
-200 checks passing. 70.9% coverage (gate: 70%)
-Unit: tests/unit/ (73 tests)
-Integration: tests/integration/ (127 assertions across 4 suites)
+225 checks passing. 72.6% coverage (gate: 70%)
+Unit: tests/unit/ (84 tests, includes test_invoice_patch_reject.py)
+Integration: tests/integration/ (138 assertions across 4 suites, includes API3b reject/patch/re-approve in test_api.sh)
 Concurrency: tests/concurrency/
 Run: ./deploy.sh --test OR ./tests/run_coverage.sh
 
@@ -119,6 +119,10 @@ Logs: emoji banner with invoice_id, amount, customer, due_date
 
 ## Pending / Known
 - FRs.md mentions reject but was not in original implementation -- now done
-- 3_1_patch_invoice.sh and 3_2_reject_invoice.sh created by VSCode agent -- not yet verified by Claude
+- 3_1_patch_invoice.sh and 3_2_reject_invoice.sh verified by Claude: fixed a
+  hardcoded If-Match: 1 bug in 3_approve_invoice.sh/3_2_reject_invoice.sh that
+  broke reject->patch->reapprove on any invoice past version 1
 - rejection_reason clearing in PATCH confirmed in code review
+- PATCH/reject now covered by tests/unit/test_invoice_patch_reject.py and the
+  API3b section of tests/integration/test_api.sh
 - All changes committed to main and pushed

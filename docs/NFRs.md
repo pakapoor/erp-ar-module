@@ -18,7 +18,10 @@ System must prioritize consistency over availability (CP in CAP theorem). All fi
 **Isolation Levels:**
 ```
 Invoice creation:     Read Committed    -- PostgreSQL default, sufficient
-Invoice approval:     Repeatable Read   -- consistent view during approval
+Invoice approval:     Read Committed + optimistic lock (version column) --
+                      no explicit isolation bump; the conditional
+                      UPDATE ... WHERE version = :version guards the race
+Credit memo / void:   Repeatable Read   -- consistent view while reversing GL
 Payment allocation:   Serializable      -- prevent double allocation
 Aging report:         Read Committed    -- read only, 5 min staleness ok
 ```

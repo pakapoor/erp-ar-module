@@ -2,8 +2,8 @@
 
 Comprehensive guide to all automated tests: unit tests, integration tests, and concurrency tests with descriptions, execution methods, and results.
 
-**Last Verified:** July 21, 2026  
-**Test Run Status:** ✅ All 200 checks passing (100% pass rate)
+**Last Verified:** July 22, 2026  
+**Test Run Status:** ✅ All 225 checks passing (100% pass rate)
 
 ---
 
@@ -11,14 +11,14 @@ Comprehensive guide to all automated tests: unit tests, integration tests, and c
 
 | Category | Tests | Assertions | Status | Pass Rate |
 |----------|-------|-----------|--------|-----------|
-| **Unit Tests** | 73 | 73 | ✅ PASS | 100% |
-| **Integration Tests** | 4 suites | 127 | ✅ PASS | 100% |
+| **Unit Tests** | 84 | 84 | ✅ PASS | 100% |
+| **Integration Tests** | 4 suites | 138 | ✅ PASS | 100% |
 | **Concurrency Tests** | 1 suite | 3 | ✅ PASS | 100% |
-| **Total** | **78** | **200** | **✅ PASS** | **100%** |
+| **Total** | **89** | **225** | **✅ PASS** | **100%** |
 
 ---
 
-## Unit Tests (73 tests, 73 assertions)
+## Unit Tests (84 tests, 84 assertions)
 
 All unit tests run with Python's `unittest` framework. External systems and database sessions are mocked at their boundaries.
 
@@ -31,11 +31,11 @@ All unit tests run with Python's `unittest` framework. External systems and data
 | Attribute | Details |
 |-----------|---------|
 | **File** | `tests/unit/test_auth.py` |
-| **Test Count** | 12 tests |
+| **Test Count** | 9 tests |
 | **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_auth` |
 | **Description** | Validates JWT token generation, signature verification, expiration, invalid tokens, role extraction, and RBAC enforcement across different tenant contexts. |
 | **Coverage** | 68.5% of `src/auth.py` |
-| **Status** | ✅ PASS (12/12) |
+| **Status** | ✅ PASS (9/9) |
 | **Key Tests** | Token creation, signature validation, expiration enforcement, role verification, invalid header handling |
 
 ---
@@ -49,11 +49,11 @@ All unit tests run with Python's `unittest` framework. External systems and data
 | Attribute | Details |
 |-----------|---------|
 | **File** | `tests/unit/test_endpoints.py` |
-| **Test Count** | 8 tests |
+| **Test Count** | 9 tests |
 | **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_endpoints` |
 | **Description** | Tests router-level handlers for aging reports, delivery status, and journal entries with mocked database responses. Validates response formatting and error cases. |
 | **Coverage** | Partial coverage for `src/routers/aging.py`, `src/routers/delivery.py`, `src/routers/journal_entries.py` |
-| **Status** | ✅ PASS (8/8) |
+| **Status** | ✅ PASS (9/9) |
 | **Key Tests** | Aging report formatting, delivery status retrieval, journal entry listing |
 
 ---
@@ -67,11 +67,11 @@ All unit tests run with Python's `unittest` framework. External systems and data
 | Attribute | Details |
 |-----------|---------|
 | **File** | `tests/unit/test_financial_guards.py` |
-| **Test Count** | 9 tests |
+| **Test Count** | 7 tests |
 | **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_financial_guards` |
 | **Description** | Validates idempotency key handling (creation, completion, conflict detection), credit memo payload validation (reason codes, amounts), write-off guards, void guards, and cached command replay. Tests enforce financial integrity rules. |
 | **Coverage** | Comprehensive coverage of idempotency and credit command logic |
-| **Status** | ✅ PASS (9/9) |
+| **Status** | ✅ PASS (7/7) |
 | **Key Tests** | Idempotency collision detection, credit memo validation, write-off business rules, void constraints, cached response replay |
 
 ---
@@ -85,11 +85,11 @@ All unit tests run with Python's `unittest` framework. External systems and data
 | Attribute | Details |
 |-----------|---------|
 | **File** | `tests/unit/test_fx_rate_worker.py` |
-| **Test Count** | 7 tests |
+| **Test Count** | 4 tests |
 | **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_fx_rate_worker` |
 | **Description** | Tests FX rate import job scheduling, ECB feed parsing, rate application, retry logic, and database persistence. Includes failure mode handling (bad feeds, network errors). |
 | **Coverage** | 79.1% of `src/fx_rate_worker.py` |
-| **Status** | ✅ PASS (7/7) |
+| **Status** | ✅ PASS (4/4) |
 | **Key Tests** | Rate import job creation, ECB feed parsing, retry scheduling, database persistence, failure isolation |
 
 ---
@@ -103,12 +103,30 @@ All unit tests run with Python's `unittest` framework. External systems and data
 | Attribute | Details |
 |-----------|---------|
 | **File** | `tests/unit/test_invoice_fx.py` |
-| **Test Count** | 6 tests |
+| **Test Count** | 3 tests |
 | **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_invoice_fx` |
 | **Description** | Tests FX-adjusted invoice creation, payment allocation across multiple currencies, GL journal generation with FX gains/losses, and multi-currency AR aging. |
 | **Coverage** | Partial coverage of `src/routers/invoices.py` and `src/routers/payments.py` |
-| **Status** | ✅ PASS (6/6) |
+| **Status** | ✅ PASS (3/3) |
 | **Key Tests** | Multi-currency invoice creation, payment currency matching, FX gain/loss GL entries, AR aging by currency |
+
+---
+
+### Category: Invoice Correction (PATCH and Reject)
+
+**Purpose:** `PATCH /invoices/{id}` and the `action: REJECT` branch of `POST /invoices/{id}/approve` -- guard clauses, SOX enforcement, and the full reject -> patch -> re-approve chain.
+
+#### Test: `test_invoice_patch_reject.py`
+
+| Attribute | Details |
+|-----------|---------|
+| **File** | `tests/unit/test_invoice_patch_reject.py` |
+| **Test Count** | 11 tests |
+| **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_invoice_patch_reject` |
+| **Description** | Tests PATCH guard clauses (404, stale If-Match, non-DRAFT status, cached idempotent replay), the PATCH happy path (line-item replacement, total recalculation, rejection_reason cleared), reject guard clauses (SOX, non-DRAFT, stale version), the reject happy path (DRAFT persisted, `REJECTED` response label, no GL/delivery), and the full reject -> patch -> re-approve router-level chain. |
+| **Coverage** | Contributed most of `src/routers/invoices.py`'s rise from 24.9% to 56.8% |
+| **Status** | ✅ PASS (11/11) |
+| **Key Tests** | Version conflict on stale If-Match, SOX violation on self-reject, INVALID_STATUS on non-DRAFT edit/reject, rejection_reason cleared by PATCH, reject response reports `REJECTED` while the DB row is DRAFT |
 
 ---
 
@@ -121,11 +139,11 @@ All unit tests run with Python's `unittest` framework. External systems and data
 | Attribute | Details |
 |-----------|---------|
 | **File** | `tests/unit/test_router_helpers.py` |
-| **Test Count** | 5 tests |
+| **Test Count** | 14 tests |
 | **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_router_helpers` |
 | **Description** | Tests FIFO and manual payment allocation algorithms, GL journal line generation (normal, FX, credit memo), formatting utilities, and data transformation helpers. |
 | **Coverage** | Helper function coverage across payment and journal routers |
-| **Status** | ✅ PASS (5/5) |
+| **Status** | ✅ PASS (14/14) |
 | **Key Tests** | FIFO payment allocation, manual allocation, GL line formatting, invoice-to-GL mapping |
 
 ---
@@ -139,11 +157,11 @@ All unit tests run with Python's `unittest` framework. External systems and data
 | Attribute | Details |
 |-----------|---------|
 | **File** | `tests/unit/test_seed_and_database.py` |
-| **Test Count** | 8 tests |
+| **Test Count** | 3 tests |
 | **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_seed_and_database` |
 | **Description** | Tests seed data loading, customer/tenant isolation, invoice and payment record creation, GL entry generation, and database transaction rollback behavior. |
 | **Coverage** | 93.5% of `src/seed_data.py` |
-| **Status** | ✅ PASS (8/8) |
+| **Status** | ✅ PASS (3/3) |
 | **Key Tests** | Seed data consistency, tenant isolation enforcement, transaction rollback, record creation |
 
 ---
@@ -157,11 +175,11 @@ All unit tests run with Python's `unittest` framework. External systems and data
 | Attribute | Details |
 |-----------|---------|
 | **File** | `tests/unit/test_worker_persistence.py` |
-| **Test Count** | 4 tests |
+| **Test Count** | 8 tests |
 | **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_worker_persistence` |
 | **Description** | Tests SQS queue URL resolution, message envelope construction, delivery status tracking, and re-delivery handling. Validates outbox event persistence and SQS message format. |
 | **Coverage** | Coverage of `src/delivery_publisher.py` |
-| **Status** | ✅ PASS (4/4) |
+| **Status** | ✅ PASS (8/8) |
 | **Key Tests** | Queue URL resolution with retry, stable message envelope, delivery tracking, queue availability checks |
 
 ---
@@ -175,16 +193,16 @@ All unit tests run with Python's `unittest` framework. External systems and data
 | Attribute | Details |
 |-----------|---------|
 | **File** | `tests/unit/test_workers.py` |
-| **Test Count** | 8 tests |
+| **Test Count** | 16 tests |
 | **How to Run** | `docker compose exec -T app python -m unittest tests.unit.test_workers` |
 | **Description** | Tests delivery worker message processing (invalid JSON, duplicate delivery, message visibility), claimed delivery lifecycle, FX worker job creation and scheduling, database persistence. |
 | **Coverage** | 86.9% of `src/delivery_worker.py`, 79.1% of `src/fx_rate_worker.py` |
-| **Status** | ✅ PASS (8/8) |
+| **Status** | ✅ PASS (16/16) |
 | **Key Tests** | Invalid message handling, duplicate detection, delivery claim lifecycle, visibility extension, dead-letter handling |
 
 ---
 
-## Integration Tests (127 assertions)
+## Integration Tests (138 assertions)
 
 Integration tests are curl-driven shell scripts that verify the running system end-to-end. They test HTTP APIs, database state, GL reconciliation, and distributed system behavior.
 
@@ -195,15 +213,16 @@ Integration tests are curl-driven shell scripts that verify the running system e
 | Attribute | Details |
 |-----------|---------|
 | **File** | `tests/integration/test_api.sh` |
-| **Assertion Count** | 62 |
+| **Assertion Count** | 76 |
 | **How to Run** | `./deploy.sh --no-build --test` (included automatically) OR `./tests/integration/test_api.sh` |
 | **Prerequisites** | Running stack: `./deploy.sh --seed` |
-| **Description** | Comprehensive API walkthrough: invoice creation with multiple line items, approval/GL posting, payment recording (FIFO and manual allocation), AR aging report, credit memos, write-offs, voids, FX invoices/payments, idempotency verification, cross-tenant isolation, and AR-to-GL reconciliation. |
-| **Coverage** | Full end-to-end flow coverage (127 curl calls with assertions) |
-| **Status** | ✅ PASS (62/62) |
+| **Description** | Comprehensive API walkthrough: invoice creation with multiple line items, approval/GL posting, PATCH/reject/re-approve correction cycle, payment recording (FIFO and manual allocation), AR aging report, credit memos, write-offs, voids, FX invoices/payments, idempotency verification, cross-tenant isolation, and AR-to-GL reconciliation. |
+| **Coverage** | Full end-to-end flow coverage |
+| **Status** | ✅ PASS (76/76) |
 | **Time** | ~5-10 seconds |
 | **Key Scenarios** |  |
 | • Invoice Creation | Create invoice with 2 line items, verify GL journal posted |
+| • Reject/Patch/Re-approve | Approver rejects with a reason (DRAFT, no GL, no delivery), creator PATCHes to fix and clears the reason, plain approve then posts one GL entry; role guards and idempotency replay also verified |
 | • Payment Processing | Record payment with FIFO allocation, verify AR aging updates |
 | • Multi-line GL | Verify each invoice line generates separate GL entry with correct debit/credit |
 | • FX Handling | Create FX invoice in JPY, pay partially in USD, verify FX gain/loss GL entries |
@@ -375,17 +394,17 @@ docker compose exec -T app python -m unittest tests.unit.test_fx_rate_worker
 
 **Coverage Metrics:** Python statement and branch coverage via Coverage.py  
 **Coverage Gate:** 70% minimum (enforced by `./tests/run_coverage.sh`)  
-**Verified:** July 21, 2026
+**Verified:** July 22, 2026
 
 ### Overall Coverage
 
 | Metric | Result | Status |
 |--------|--------|--------|
-| **Combined Coverage (Statement + Branch)** | **70.9%** | ✅ PASS (exceeds 70% gate) |
-| **Total Statements** | 1902 | |
-| **Statements Executed** | 1429 (75.1%) | |
-| **Statements Not Executed** | 473 (24.9%) | |
-| **Branch Coverage** | 70.2% | |
+| **Combined Coverage (Statement + Branch)** | **72.6%** | ✅ PASS (exceeds 70% gate) |
+| **Total Statements** | 1997 | |
+| **Statements Executed** | 1529 (76.6%) | |
+| **Statements Not Executed** | 468 (23.4%) | |
+| **Total Branches** | 364 | |
 
 ### Coverage by Module
 
@@ -405,10 +424,10 @@ docker compose exec -T app python -m unittest tests.unit.test_fx_rate_worker
 | **src/routers/credit_memos.py** | 231 | 32.8% | ⚠️ Below average (end-to-end tested) |
 | **src/routers/delivery.py** | 44 | 98.1% | ✅ Excellent |
 | **src/routers/health.py** | 51 | 81.4% | ✅ Good |
-| **src/routers/invoices.py** | 186 | 34.5% | ⚠️ Below average (end-to-end tested) |
+| **src/routers/invoices.py** | 262 | 56.8% | ⚠️ Below average (end-to-end + PATCH/reject unit tested) |
 | **src/routers/journal_entries.py** | 44 | 96.0% | ✅ Excellent |
 | **src/routers/payments.py** | 169 | 41.7% | ⚠️ Below average (end-to-end tested) |
-| **src/schemas.py** | 211 | 95.5% | ✅ Excellent |
+| **src/schemas.py** | 230 | 93.9% | ✅ Excellent |
 | **src/seed_data.py** | 29 | 93.5% | ✅ Good |
 
 ### Coverage Analysis
@@ -421,9 +440,9 @@ docker compose exec -T app python -m unittest tests.unit.test_fx_rate_worker
 - `src/seed_data.py` (93.5%): Seed operations comprehensively tested
 - `src/database.py` (88.5%): Database helpers tested
 
-**Lower Coverage Modules** (32-42%, intentionally):
+**Lower Coverage Modules** (33-57%, intentionally):
 - `src/routers/credit_memos.py` (32.8%): Command logic (create, write-off, void) is integration-tested via `test_credit_memo.sh`, not duplicated in unit tests
-- `src/routers/invoices.py` (34.5%): Main invoice creation/approval flow covered end-to-end by `test_api.sh`, complex business logic verified through integration
+- `src/routers/invoices.py` (56.8%): Main invoice creation/approval flow covered end-to-end by `test_api.sh`; PATCH and reject guard clauses/happy paths are unit-tested by `test_invoice_patch_reject.py` (this module rose from 24.9% to 56.8% when that file was added)
 - `src/routers/payments.py` (41.7%): Payment allocation (FIFO, manual) validated by `test_api.sh` and concurrency tests
 
 **Rationale for Lower Unit Coverage on Routers:**
@@ -442,12 +461,12 @@ Unit tests would duplicate this validation with mocked databases and lose the be
 
 | Metric | Value | Interpretation |
 |--------|-------|-----------------|
-| **Total Automated Checks** | 200 | Comprehensive coverage of happy path and error cases |
+| **Total Automated Checks** | 225 | Comprehensive coverage of happy path and error cases |
 | **Pass Rate** | 100% | All checks passing in verified run |
-| **Unit Tests** | 73 | Deep testing of business logic, utilities, and error handling |
-| **Integration Assertions** | 127 | End-to-end verification of APIs, GL correctness, and system behavior |
-| **Code Coverage** | 70.9% | Exceeds 70% gate; lower on command routers (integration-tested) |
-| **Concurrency Tests** | 3 suites | Specific validation for payment race conditions |
+| **Unit Tests** | 84 | Deep testing of business logic, utilities, and error handling |
+| **Integration Assertions** | 138 | End-to-end verification of APIs, GL correctness, and system behavior |
+| **Code Coverage** | 72.6% | Exceeds 70% gate; lower on command routers (integration-tested) |
+| **Concurrency Assertions** | 3 | Specific validation for payment race conditions |
 | **Avg Test Execution Time** | ~30-40 seconds | Full suite runs quickly for CI/CD |
 
 ---

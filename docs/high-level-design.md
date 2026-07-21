@@ -96,7 +96,7 @@ request/response fields and error contracts remain authoritative in
 
 ![API1 invoice creation flow](flows/api1_post_invoices_flow.svg)
 
-- Required role: invoice_creator
+- Required role: invoice_creator (also cfo or system_admin)
 - X-Idempotency-Key required
 - Server calculates: subtotal, tax, total, due_date (never trust client)
 - Foreign currency: locks the latest approved invoice-date rate (maximum three
@@ -223,7 +223,11 @@ describes the current line items.
 - No auth required -- used by Docker, load balancer, DataDog
 - Shows: DB status, MV age, last reconciliation status
 - Reconciles posted invoice base balances to base-currency AR GL per entity
-- Result: 200 healthy or 503 unhealthy
+- Three body states: `healthy`, `degraded` (aging MV stale > 10 minutes, DB
+  and reconciliation still fine), `unhealthy` (reconciliation mismatch or DB
+  error). Only `healthy` returns HTTP 200 -- `degraded` and `unhealthy` both
+  return 503, so a load balancer/Docker healthcheck removes the instance from
+  rotation on either state even though the body distinguishes them
 
 ### Delivery operations
 

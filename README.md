@@ -90,19 +90,19 @@ Stack: Envoy, Python/FastAPI, PostgreSQL 16 (pg_cron + RLS), LocalStack SQS, Doc
 
 ## Tests
 
-200 checks passing. 70.9% code coverage.
+225 checks passing. 72.6% code coverage.
 
-### Integration (127 assertions)
+### Integration (141 assertions)
 
 | Suite | Assertions | What it tests |
 |-------|-----------|---------------|
-| `tests/integration/test_api.sh` | 62 | All 6 required APIs, FX invoices/payments, accounting correctness, idempotency, cross-tenant isolation, AR-to-GL reconciliation |
+| `tests/integration/test_api.sh` | 76 | All 6 required APIs, PATCH/reject/re-approve, FX invoices/payments, accounting correctness, idempotency, cross-tenant isolation, AR-to-GL reconciliation |
 | `tests/integration/test_api_negative.sh` | 34 | Malformed JWTs, bad headers, hostile JSON, post-burst health check |
 | `tests/integration/test_credit_memo.sh` | 17 | Credit memo entity isolation, idempotency, concurrent over-credit, paid/partial invoices, FX and GL balance |
 | `tests/integration/test_delivery_sqs.sh` | 11 | Outbox -> SQS -> consumer flow, DLQ redrive, downstream deduplication, CFO retry of DEAD event |
 | `tests/concurrency/test_payment_concurrency.sh` | 3 | Two concurrent payments race AUTO and MANUAL -- exactly one commits, loser gets 409 |
 
-### Unit (73 tests)
+### Unit (84 tests)
 
 | File | What it covers |
 |------|---------------|
@@ -111,12 +111,13 @@ Stack: Envoy, Python/FastAPI, PostgreSQL 16 (pg_cron + RLS), LocalStack SQS, Doc
 | `test_financial_guards.py` | SOX checks, period close, credit limit, idempotency guards |
 | `test_fx_rate_worker.py` | ECB rate ingestion, staleness, currency pairs |
 | `test_invoice_fx.py` | FX invoice creation, base currency amounts |
+| `test_invoice_patch_reject.py` | PATCH /invoices/{id} and reject (action: REJECT) guard clauses and happy paths |
 | `test_router_helpers.py` | Aging builder, health reconciliation logic |
 | `test_seed_and_database.py` | Seed data integrity, RLS enforcement |
 | `test_worker_persistence.py` | Outbox persistence, crash recovery |
 | `test_workers.py` | SQS consumer, publisher, DLQ redrive |
 
-### Coverage (verified 20 July 2026)
+### Coverage (verified 22 July 2026)
 
 | Module | Coverage |
 |--------|---------|
@@ -128,7 +129,10 @@ Stack: Envoy, Python/FastAPI, PostgreSQL 16 (pg_cron + RLS), LocalStack SQS, Doc
 | `src/delivery_worker.py` | 87% |
 | `src/routers/health.py` | 81% |
 | `src/fx_rate_worker.py` | 79% |
-| Overall | 70.9% (gate: 70%) |
+| `src/routers/invoices.py` | 57% |
+| `src/routers/payments.py` | 42% |
+| `src/routers/credit_memos.py` | 33% |
+| Overall | 72.6% (gate: 70%) |
 
 See [Test Results](docs/tests.md) for dashboard summary and [Test Catalog](docs/test-catalog.md) for comprehensive details (all categories, individual tests, how to run, descriptions, and coverage).
 
