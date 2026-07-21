@@ -43,7 +43,7 @@ Raise invoice -> Approve -> Post to GL -> Receive payment -> Age receivables -> 
 | POST | /invoices | Create invoice with line items |
 | GET | /invoices/{id} | Retrieve invoice with payment history |
 | PATCH | /invoices/{id} | Edit a DRAFT invoice (creator only) |
-| POST | /invoices/{id}/approve | Approve and generate GL journal entry |
+| POST | /invoices/{id}/approve | Approve (generates GL journal entry) or reject (`action: REJECT`, reverts to DRAFT) |
 | POST | /payments | Record payment and FIFO/manual allocation |
 | GET | /customers/{id}/aging | AR aging report (current/30/60/90+ days) |
 | GET | /journal-entries | GL journal entries for an invoice |
