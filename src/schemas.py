@@ -71,6 +71,27 @@ class InvoiceCreate(BaseModel):
     # due_date     ← invoice_date + payment_terms
 
 
+class InvoiceUpdate(BaseModel):
+    """PATCH /invoices/{id} — what client sends. Only allowed while status == DRAFT."""
+    po_reference: Optional[str] = None
+    invoice_date: Optional[date] = None
+    payment_terms: Optional[str] = None
+    currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
+    line_items: Optional[List[LineItemCreate]] = Field(default=None, min_length=1)
+
+    @field_validator("currency")
+    @classmethod
+    def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        return normalize_supported_currency(value)
+
+    # NOT in request body:
+    # If-Match header → version check
+    # X-Idempotency-Key header → idempotency
+    # customer_id, status ← immutable via this endpoint
+
+
 class PaymentHistoryItem(BaseModel):
     payment_id: str
     payment_reference: str

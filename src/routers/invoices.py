@@ -20,7 +20,7 @@ from src.models import (
     PaymentAllocation, Payment, CreditMemo
 )
 from src.schemas import (
-    InvoiceCreate, InvoiceResponse, InvoiceApprove,
+    InvoiceCreate, InvoiceUpdate, InvoiceResponse, InvoiceApprove,
     InvoiceApproveResponse, LineItemResponse,
     PaymentHistoryItem, CreditMemoHistoryItem, StatusHistoryItem
 )
@@ -469,6 +469,288 @@ async def create_invoice(
     logger.info(f"Invoice {invoice.id} created by {current_user.user_id}")
     # 🔴 BREAKPOINT 20: Return HTTP 201 with response body
     return JSONResponse(status_code=201, content=response_body)
+
+
+# ============================================================
+# API1b: PATCH /invoices/{id}
+# FR — Edit a DRAFT invoice (e.g. after rejection)
+# SOX: only the invoice_creator role may edit; approval/rejection is a
+# separate role (invoice_approver/cfo), so this endpoint intentionally
+# does NOT accept those roles.
+# ============================================================
+@router.patch("/invoices/{invoice_id}")
+async def update_invoice(
+    invoice_id: str,
+    payload: InvoiceUpdate,
+    x_idempotency_key: str = Header(..., alias="X-Idempotency-Key"),
+    if_match: str = Header(..., alias="If-Match"),
+    current_user: CurrentUser = Depends(require_role("invoice_creator")),
+    db: AsyncSession = Depends(get_db),
+):
+    await db.execute(
+        text("""
+            SELECT
+                set_config('app.current_user_id', :user_id, true),
+                set_config('app.tenant_id', :tenant_id, true),
+                set_config('app.entity_id', :entity_id, true)
+        """),
+        {
+            "user_id": current_user.user_id,
+            "tenant_id": current_user.tenant_id,
+            "entity_id": current_user.entity_id,
+        },
+    )
+
+    # ── Idempotency check ──────────────────────────────────
+    request_hash = hashlib.sha256(
+        f"{invoice_id}:{json.dumps(payload.model_dump(exclude_unset=True), default=str)}".encode()
+    ).hexdigest()
+
+    existing = await check_idempotency(
+        db, x_idempotency_key, current_user.tenant_id, current_user.entity_id,
+        f"PATCH /invoices/{invoice_id}", request_hash
+    )
+    if existing:
+        return JSONResponse(
+            status_code=existing.response_status,
+            content=existing.response_body
+        )
+
+    # ── Fetch invoice ───────────────────────────────────────
+    result = await db.execute(
+        select(Invoice).where(
+            and_(
+                Invoice.id == invoice_id,
+                Invoice.tenant_id == current_user.tenant_id,
+                Invoice.entity_id == current_user.entity_id,
+            )
+        )
+    )
+    invoice = result.scalar_one_or_none()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # ── Optimistic locking — ABA prevention ───────────────
+    if str(invoice.version) != if_match:
+        raise VersionConflictException(
+            "Invoice was modified since last viewed. Please refresh."
+        )
+
+    # ── Only DRAFT invoices may be edited ──────────────────
+    # Covers brand-new invoices and rejected invoices (reject reverts
+    # status back to DRAFT). APPROVED/SENT/PAID/etc. are immutable here.
+    if invoice.status != "DRAFT":
+        raise BusinessRuleException(
+            "INVALID_STATUS",
+            f"Cannot edit invoice with status: {invoice.status}"
+        )
+
+    # ── Begin idempotency key ──────────────────────────────
+    await create_idempotency_key(
+        db, x_idempotency_key, current_user.tenant_id, current_user.entity_id,
+        f"PATCH /invoices/{invoice_id}", request_hash
+    )
+
+    update_data = payload.model_dump(exclude_unset=True)
+
+    new_po_reference = update_data.get("po_reference", invoice.po_reference)
+    new_invoice_date = update_data.get("invoice_date", invoice.invoice_date)
+    new_payment_terms = update_data.get("payment_terms", invoice.payment_terms)
+    new_currency = update_data.get("currency", invoice.transaction_currency)
+
+    replace_line_items = "line_items" in update_data
+    if replace_line_items:
+        assert payload.line_items is not None
+        lines_for_calc = payload.line_items
+    else:
+        existing_lines_result = await db.execute(
+            select(InvoiceLineItem)
+            .where(InvoiceLineItem.invoice_id == invoice_id)
+            .order_by(InvoiceLineItem.line_number)
+        )
+        lines_for_calc = existing_lines_result.scalars().all()
+
+    # ── Recalculate totals ──────────────────────────────────
+    subtotal_total = 0
+    tax_total = 0
+    for line in lines_for_calc:
+        subtotal, tax_amount, _ = calculate_line_totals(line)
+        subtotal_total += subtotal
+        tax_total += tax_amount
+    grand_total = subtotal_total + tax_total
+    due_date = calculate_due_date(new_invoice_date, new_payment_terms)
+
+    # Base currency is fixed per entity — re-resolve the FX snapshot for
+    # the (possibly new) transaction currency / invoice date.
+    exchange_rate_id, exchange_rate = await resolve_invoice_exchange_rate(
+        db,
+        current_user.tenant_id,
+        new_currency,
+        invoice.base_currency,
+        new_invoice_date,
+    )
+    base_subtotal_total = convert_to_base(subtotal_total, exchange_rate)
+    base_tax_total = convert_to_base(tax_total, exchange_rate)
+    base_grand_total = base_subtotal_total + base_tax_total
+
+    # ── Credit limit check (excluding this invoice's own balance) ─────
+    customer_result = await db.execute(
+        select(Customer).where(
+            and_(
+                Customer.id == invoice.customer_id,
+                Customer.tenant_id == current_user.tenant_id,
+                Customer.entity_id == current_user.entity_id,
+            )
+        )
+    )
+    customer = customer_result.scalar_one()
+    outstanding_result = await db.execute(
+        select(text("COALESCE(SUM(base_balance_amount), 0)")).select_from(Invoice).where(
+            and_(
+                Invoice.customer_id == invoice.customer_id,
+                Invoice.tenant_id == current_user.tenant_id,
+                Invoice.entity_id == current_user.entity_id,
+                Invoice.id != invoice_id,
+                Invoice.status.not_in(["PAID", "VOID", "WRITTEN_OFF"]),
+            )
+        )
+    )
+    outstanding = outstanding_result.scalar() or 0
+    if customer.credit_limit > 0 and (outstanding + base_grand_total) > customer.credit_limit:
+        raise BusinessRuleException(
+            "CREDIT_LIMIT_EXCEEDED",
+            f"Credit limit of {customer.credit_limit} would be exceeded"
+        )
+
+    # ── Atomically claim the expected invoice version ─────
+    # DRAFT invoices carry no payments/credit memos, so balance == total.
+    # Editing clears any prior rejection_reason since the invoice is being
+    # corrected and re-submitted.
+    now = datetime.utcnow()
+    claimed = await db.execute(
+        update(Invoice)
+        .where(
+            and_(
+                Invoice.id == invoice_id,
+                Invoice.tenant_id == current_user.tenant_id,
+                Invoice.entity_id == current_user.entity_id,
+                Invoice.version == invoice.version,
+                Invoice.status == "DRAFT",
+            )
+        )
+        .values(
+            po_reference=new_po_reference,
+            invoice_date=new_invoice_date,
+            due_date=due_date,
+            payment_terms=new_payment_terms,
+            transaction_currency=new_currency,
+            exchange_rate_id=exchange_rate_id,
+            exchange_rate=exchange_rate,
+            subtotal_amount=subtotal_total,
+            tax_amount=tax_total,
+            total_amount=grand_total,
+            balance_amount=grand_total,
+            base_subtotal_amount=base_subtotal_total,
+            base_tax_amount=base_tax_total,
+            base_total_amount=base_grand_total,
+            base_balance_amount=base_grand_total,
+            rejection_reason=None,
+            version=Invoice.version + 1,
+            updated_at=now,
+        )
+        .returning(Invoice.version)
+        .execution_options(synchronize_session=False)
+    )
+    new_version = claimed.scalar_one_or_none()
+    if new_version is None:
+        raise VersionConflictException(
+            "Invoice was modified by another request. Please refresh."
+        )
+
+    # ── Replace line items if a new set was sent ───────────
+    if replace_line_items:
+        assert payload.line_items is not None
+        await db.execute(
+            text("DELETE FROM invoice_line_item WHERE invoice_id = :invoice_id"),
+            {"invoice_id": invoice_id},
+        )
+        for i, line in enumerate(payload.line_items, start=1):
+            subtotal, tax_amount, total_price = calculate_line_totals(line)
+            db.add(InvoiceLineItem(
+                tenant_id=current_user.tenant_id,
+                invoice_id=invoice_id,
+                line_number=i,
+                description=line.description,
+                quantity=line.quantity,
+                unit_price=line.unit_price,
+                subtotal=subtotal,
+                tax_rate=line.tax_rate,
+                tax_jurisdiction=line.tax_jurisdiction,
+                tax_amount=tax_amount,
+                total_price=total_price,
+            ))
+
+    await db.flush()
+
+    line_items_result = await db.execute(
+        select(InvoiceLineItem)
+        .where(InvoiceLineItem.invoice_id == invoice_id)
+        .order_by(InvoiceLineItem.line_number)
+    )
+    saved_line_items = line_items_result.scalars().all()
+
+    # ── Build response ─────────────────────────────────────
+    response_body = {
+        "id": invoice_id,
+        "status": "DRAFT",
+        "version": new_version,
+        "po_reference": new_po_reference,
+        "invoice_date": str(new_invoice_date),
+        "due_date": str(due_date),
+        "payment_terms": new_payment_terms,
+        "currency": new_currency,
+        "base_currency": invoice.base_currency,
+        "exchange_rate_id": exchange_rate_id,
+        "exchange_rate": str(exchange_rate),
+        "subtotal_amount": str(subtotal_total),
+        "tax_amount": str(tax_total),
+        "total_amount": str(grand_total),
+        "balance_amount": str(grand_total),
+        "base_subtotal_amount": str(base_subtotal_total),
+        "base_tax_amount": str(base_tax_total),
+        "base_total_amount": str(base_grand_total),
+        "base_balance_amount": str(base_grand_total),
+        "updated_at": now.isoformat(),
+        "line_items": [
+            {
+                "id": li.id,
+                "line_number": li.line_number,
+                "description": li.description,
+                "quantity": str(li.quantity),
+                "unit_price": str(li.unit_price),
+                "subtotal": str(li.subtotal),
+                "tax_rate": str(li.tax_rate),
+                "tax_jurisdiction": li.tax_jurisdiction,
+                "tax_amount": str(li.tax_amount),
+                "total_price": str(li.total_price),
+            }
+            for li in saved_line_items
+        ],
+    }
+
+    await complete_idempotency_key(
+        db,
+        x_idempotency_key,
+        current_user.tenant_id,
+        current_user.entity_id,
+        f"PATCH /invoices/{invoice_id}",
+        200,
+        response_body,
+    )
+    await db.commit()
+
+    logger.info(f"Invoice {invoice_id} edited by {current_user.user_id}")
+    return JSONResponse(status_code=200, content=response_body)
 
 
 # ============================================================
