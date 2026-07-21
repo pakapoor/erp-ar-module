@@ -1,6 +1,6 @@
-# Interview Walkthrough Ñ ERP AR Module
+# Technical Walkthrough Ñ ERP AR Module
 
-This document is your live guide during the technical interview.
+This document is your live guide during the technical session.
 Open it on one side of your screen, run the demo on the other.
 
 ---
