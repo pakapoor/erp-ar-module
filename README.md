@@ -129,7 +129,7 @@ Stack: Envoy, Python/FastAPI, PostgreSQL 16 (pg_cron + RLS), LocalStack SQS, Doc
 | `src/fx_rate_worker.py` | 79% |
 | Overall | 70.9% (gate: 70%) |
 
-See [Test Results](docs/tests.md) for full breakdown.
+See [Test Results](docs/tests.md) for dashboard summary and [Test Catalog](docs/test-catalog.md) for comprehensive details (all categories, individual tests, how to run, descriptions, and coverage).
 
 ---
 
