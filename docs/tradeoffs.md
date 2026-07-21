@@ -1,12 +1,12 @@
-# Design Tradeoffs â€" ERP AR Module
+# Design Tradeoffs ?" ERP AR Module
 
 Every significant design decision with options considered, tradeoffs weighed, and choice made.
 
 ---
 
-## T1 â€" Architecture: Modular Monolith vs Microservices
+## T1 ?" Architecture: Modular Monolith vs Microservices
 
-**Q: Should we use microservices or a modular monolithâ†'**
+**Q: Should we use microservices or a modular monolith?'**
 
 | | Modular Monolith | Microservices |
 |--|--|--|
@@ -21,9 +21,9 @@ Invoice creation needs invoice + line_items in one ACID transaction. Payment nee
 
 ---
 
-## T2 â€" Consistency vs Availability (CAP theorem)
+## T2 ?" Consistency vs Availability (CAP theorem)
 
-**Q: Should the system prioritize consistency or availabilityâ†'**
+**Q: Should the system prioritize consistency or availability?'**
 
 | | Consistency (CP) | Availability (AP) |
 |--|--|--|
@@ -35,13 +35,13 @@ Invoice creation needs invoice + line_items in one ACID transaction. Payment nee
 **Decision: Consistency (CP)**
 Financial systems must never show wrong balances. A 503 is acceptable. A wrong invoice amount is not. System returns 503 rather than serve stale financial data.
 
-Exception: AR aging report â€" 5 min staleness acceptable. Collections team does not need millisecond accuracy.
+Exception: AR aging report ?" 5 min staleness acceptable. Collections team does not need millisecond accuracy.
 
 ---
 
-## T3 â€" Database: PostgreSQL only vs PostgreSQL + Redis
+## T3 ?" Database: PostgreSQL only vs PostgreSQL + Redis
 
-**Q: Should we add Redis for caching and lockingâ†'**
+**Q: Should we add Redis for caching and locking?'**
 
 | | PostgreSQL only | PostgreSQL + Redis |
 |--|--|--|
@@ -52,15 +52,15 @@ Exception: AR aging report â€" 5 min staleness acceptable. Collections team does
 | Risk | Low | Redis down = lock lost |
 
 **Decision: PostgreSQL only**
-Redis is in-memory â€" not durable. Redis down = lock lost = double payment risk. PostgreSQL serializable isolation handles concurrent payments safely. No Redis means simpler ops, fewer failure modes.
+Redis is in-memory ?" not durable. Redis down = lock lost = double payment risk. PostgreSQL serializable isolation handles concurrent payments safely. No Redis means simpler ops, fewer failure modes.
 
 Exception: Redis acceptable for non-financial read cache in Phase 2.
 
 ---
 
-## T4 â€" Payment Isolation Level: Serializable vs Repeatable Read
+## T4 ?" Payment Isolation Level: Serializable vs Repeatable Read
 
-**Q: What isolation level for payment allocationâ†'**
+**Q: What isolation level for payment allocation?'**
 
 | | Read Committed | Repeatable Read | Serializable |
 |--|--|--|--|
@@ -84,9 +84,9 @@ clients must retry with the same idempotency key.
 
 ---
 
-## T5 â€" Idempotency: Redis vs PostgreSQL
+## T5 ?" Idempotency: Redis vs PostgreSQL
 
-**Q: Where to store idempotency keysâ†'**
+**Q: Where to store idempotency keys?'**
 
 | | Redis | PostgreSQL |
 |--|--|--|
@@ -101,9 +101,9 @@ Idempotency key must be committed in same ACID transaction as the payment. Redis
 
 ---
 
-## T6 â€" Concurrency Control: Optimistic vs Pessimistic Locking
+## T6 ?" Concurrency Control: Optimistic vs Pessimistic Locking
 
-**Q: How to prevent concurrent invoice modificationsâ†'**
+**Q: How to prevent concurrent invoice modifications?'**
 
 | | Pessimistic (DB lock) | Optimistic (version column) | Redis lock |
 |--|--|--|--|
@@ -113,7 +113,7 @@ Idempotency key must be committed in same ACID transaction as the payment. Redis
 | Deadlock risk | Yes | No | No |
 
 **Decision: Optimistic locking with version column**
-Version column increments on every invoice mutation. If-Match header carries version from client. Server rejects if version mismatch â†' 409 Conflict â†' client refreshes. Prevents ABA problem. No deadlocks. No external dependencies.
+Version column increments on every invoice mutation. If-Match header carries version from client. Server rejects if version mismatch ?' 409 Conflict ?' client refreshes. Prevents ABA problem. No deadlocks. No external dependencies.
 
 Approval performs a conditional `UPDATE ... WHERE version = expected_version AND
 status = 'DRAFT'`. Even if two requests read the same version, only one can
@@ -124,9 +124,9 @@ delivery event.
 
 ---
 
-## T7 â€" JWT Validation: Gateway only vs Zero Trust
+## T7 ?" JWT Validation: Gateway only vs Zero Trust
 
-**Q: Should AR App re-validate JWT if gateway already didâ†'**
+**Q: Should AR App re-validate JWT if gateway already did?'**
 
 | | Gateway only | Zero Trust (both) |
 |--|--|--|
@@ -140,9 +140,9 @@ Someone can bypass gateway and call AR App directly with a forged JWT. AR App in
 
 ---
 
-## T8 â€" AR Aging: Live Query vs Materialized View vs Redis Cache
+## T8 ?" AR Aging: Live Query vs Materialized View vs Redis Cache
 
-**Q: How to serve GET /customers/{id}/aging efficientlyâ†'**
+**Q: How to serve GET /customers/{id}/aging efficiently?'**
 
 | | Live JOIN | Materialized View | Redis Cache |
 |--|--|--|--|
@@ -152,13 +152,13 @@ Someone can bypass gateway and call AR App directly with a forged JWT. AR App in
 | Complexity | Simple | Medium | High (invalidation) |
 
 **Decision: Materialized View**
-Collections team reviews aging once daily â€" 5 min staleness acceptable. Redis violates NFR1. Live JOIN at 10,000 concurrent users = DB overload. MV refreshed by pg_cron every 5 minutes. as_of timestamp shown in response.
+Collections team reviews aging once daily ?" 5 min staleness acceptable. Redis violates NFR1. Live JOIN at 10,000 concurrent users = DB overload. MV refreshed by pg_cron every 5 minutes. as_of timestamp shown in response.
 
 ---
 
-## T9 â€" MV Refresh: On Write vs Cron vs pg_cron
+## T9 ?" MV Refresh: On Write vs Cron vs pg_cron
 
-**Q: When should the AR aging materialized view be refreshedâ†'**
+**Q: When should the AR aging materialized view be refreshed?'**
 
 | | On every write | Background cron | pg_cron (in DB) |
 |--|--|--|--|
@@ -169,13 +169,13 @@ Collections team reviews aging once daily â€" 5 min staleness acceptable. Redis 
 | Production viable | Mid-scale | K8s CronJob | Mid-market |
 
 **Decision: pg_cron**
-pg_cron runs once inside PostgreSQL â€" no separate scheduler container and no duplication across AR App instances. Its metadata lives in the `postgres` system database and the job targets `erp_db`. `REFRESH MATERIALIZED VIEW CONCURRENTLY` keeps the previous complete snapshot readable while rebuilding; the unique `(tenant_id, entity_id, customer_id)` index makes that possible. Refresh every 5 minutes is acceptable for the collections team. Production at enterprise scale â†' K8s CronJob or AWS EventBridge.
+pg_cron runs once inside PostgreSQL ?" no separate scheduler container and no duplication across AR App instances. Its metadata lives in the `postgres` system database and the job targets `erp_db`. `REFRESH MATERIALIZED VIEW CONCURRENTLY` keeps the previous complete snapshot readable while rebuilding; the unique `(tenant_id, entity_id, customer_id)` index makes that possible. Refresh every 5 minutes is acceptable for the collections team. Production at enterprise scale ?' K8s CronJob or AWS EventBridge.
 
 ---
 
-## T10 â€" Invoice Detail Cache: Live JOIN vs MV vs Redis
+## T10 ?" Invoice Detail Cache: Live JOIN vs MV vs Redis
 
-**Q: Should GET /invoices/{id} use a cacheâ†'**
+**Q: Should GET /invoices/{id} use a cache?'**
 
 | | Live JOIN | Materialized View | Redis Cache |
 |--|--|--|--|
@@ -185,13 +185,13 @@ pg_cron runs once inside PostgreSQL â€" no separate scheduler container and no d
 | Complexity | Simple | High | High |
 
 **Decision: Live JOIN**
-NFR2 requires < 100ms â€" live JOIN with indexes achieves this. Invoice detail staleness NOT acceptable (CFO approves based on what they see). Redis violates no-Redis decision.
+NFR2 requires < 100ms ?" live JOIN with indexes achieves this. Invoice detail staleness NOT acceptable (CFO approves based on what they see). Redis violates no-Redis decision.
 
 ---
 
-## T11 â€" Invoice Sending: Transactional Outbox + SQS
+## T11 ?" Invoice Sending: Transactional Outbox + SQS
 
-**Q: How to deliver invoices to customersâ†'**
+**Q: How to deliver invoices to customers?'**
 
 | | Direct HTTP | Direct SQS | Transactional outbox + SQS |
 |--|--|--|--|
@@ -232,9 +232,9 @@ DLQ alarms, retention/archival, metrics and a bulk redrive runbook.
 
 ---
 
-## T12 â€" API Gateway: L4 vs L7
+## T12 ?" API Gateway: L4 vs L7
 
-**Q: Should we use L4 or L7 API Gatewayâ†'**
+**Q: Should we use L4 or L7 API Gateway?'**
 
 | | L4 (TCP level) | L7 (HTTP level) |
 |--|--|--|
@@ -263,9 +263,9 @@ interview demo but should be disabled or access-controlled in production.
 
 ---
 
-## T13 â€" Cron in Distributed System: Naive vs Leader Election vs pg_cron
+## T13 ?" Cron in Distributed System: Naive vs Leader Election vs pg_cron
 
-**Q: How to run scheduled MV refresh without duplication across AR App instancesâ†'**
+**Q: How to run scheduled MV refresh without duplication across AR App instances?'**
 
 | | Cron on each instance | Leader election | pg_cron |
 |--|--|--|--|
@@ -279,9 +279,9 @@ Naive cron on each AR App instance = 3 simultaneous refreshes = lock contention.
 
 ---
 
-## T14 â€" Pagination: Cursor vs Page-based
+## T14 ?" Pagination: Cursor vs Page-based
 
-**Q: What pagination strategy for GET /journal-entriesâ†'**
+**Q: What pagination strategy for GET /journal-entries?'**
 
 | | Page-based (OFFSET) | Cursor-based |
 |--|--|--|
@@ -301,10 +301,10 @@ not the current page. Integration tests cover pages 1, 2, and 3 with
 
 ---
 
-## T15 â€" FX Rate Ingestion and Multi-Currency Posting
+## T15 ?" FX Rate Ingestion and Multi-Currency Posting
 
 **Q: How should AR obtain reproducible accounting rates without coupling a
-financial transaction to a live providerâ†'**
+financial transaction to a live provider?'**
 
 | Decision | Chosen approach | Benefit | Accepted cost |
 |---|---|---|---|
@@ -337,9 +337,9 @@ formulas, controls and tests are in
 
 ---
 
-## T16 â€" Revenue Recognition: Immediate vs Deferred
+## T16 ?" Revenue Recognition: Immediate vs Deferred
 
-**Q: Should invoice approval always recognize revenue immediatelyâ†'**
+**Q: Should invoice approval always recognize revenue immediately?'**
 
 | | Immediate recognition | Deferred recognition schedule |
 |--|--|--|
@@ -364,9 +364,9 @@ honest and financially safe prototype.
 
 ---
 
-## T17 â€" Intercompany Elimination: Entity Books vs Consolidation Ledger
+## T17 ?" Intercompany Elimination: Entity Books vs Consolidation Ledger
 
-**Q: Where should intercompany elimination entries be postedâ†'**
+**Q: Where should intercompany elimination entries be posted?'**
 
 | | Rewrite entity ledgers | Separate consolidation ledger |
 |--|--|--|

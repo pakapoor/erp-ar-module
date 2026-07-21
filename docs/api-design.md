@@ -1,15 +1,15 @@
-# API Design ‚Ä" ERP AR Module
+# API Design ?" ERP AR Module
 
 ## Table of Contents
 - [Conventions](#conventions)
-- [API1 ‚Ä" POST /invoices](#api1--post-invoices)
-- [API2 ‚Ä" GET /invoices/{id}](#api2--get-invoicesid)
-- [API3 ‚Ä" POST /invoices/{id}/approve](#api3--post-invoicesidapprove)
+- [API1 ?" POST /invoices](#api1--post-invoices)
+- [API2 ?" GET /invoices/{id}](#api2--get-invoicesid)
+- [API3 ?" POST /invoices/{id}/approve](#api3--post-invoicesidapprove)
 - [Delivery Operations](#delivery-operations)
-- [API4 ‚Ä" POST /payments](#api4--post-payments)
-- [API5 ‚Ä" GET /customers/{id}/aging](#api5--get-customersidaging)
-- [API6 ‚Ä" GET /journal-entries](#api6--get-journal-entries)
-- [API7 ‚Ä" GET /health](#api7--get-health)
+- [API4 ?" POST /payments](#api4--post-payments)
+- [API5 ?" GET /customers/{id}/aging](#api5--get-customersidaging)
+- [API6 ?" GET /journal-entries](#api6--get-journal-entries)
+- [API7 ?" GET /health](#api7--get-health)
 - [Future Enhancements](#future-enhancements)
 
 ---
@@ -18,7 +18,7 @@
 
 **Base URL:** `/api/v1`
 **Auth:** Bearer JWT token
-**Tenant:** Extracted from JWT ‚Ä" never from request body
+**Tenant:** Extracted from JWT ?" never from request body
 **Content-Type:** `application/json`
 
 ### Common Request Headers
@@ -26,8 +26,8 @@
 ```
 Authorization:       Bearer <jwt_token>
 Content-Type:        application/json
-X-Idempotency-Key:   <client-generated-uuid>   ‚Üê write operations only
-If-Match:            <version>                  ‚Üê concurrent write operations
+X-Idempotency-Key:   <client-generated-uuid>   ? write operations only
+If-Match:            <version>                  ? concurrent write operations
 ```
 
 ### Idempotency Key Rules
@@ -44,18 +44,18 @@ If-Match:            <version>                  ‚Üê concurrent write operations
 - SHA-256 request hash detects reuse with a different payload
 
 Flow:
-User clicks button ‚Ü' client generates UUID ‚Ü' stores in memory
-Network timeout   ‚Ü' client retries with SAME UUID
-Server sees key   ‚Ü' already COMPLETED ‚Ü' returns cached response
+User clicks button ?' client generates UUID ?' stores in memory
+Network timeout   ?' client retries with SAME UUID
+Server sees key   ?' already COMPLETED ?' returns cached response
 No duplicate processing!
 
 Server outcomes:
-‚Ü' COMPLETED + same hash  ‚Ü' replay original HTTP status and response body
-‚Ü' PROCESSING + same hash ‚Ü' 409 REQUEST_IN_PROGRESS
-‚Ü' same key + new hash    ‚Ü' 409 IDEMPOTENCY_KEY_REUSED
+?' COMPLETED + same hash  ?' replay original HTTP status and response body
+?' PROCESSING + same hash ?' 409 REQUEST_IN_PROGRESS
+?' same key + new hash    ?' 409 IDEMPOTENCY_KEY_REUSED
 ```
 
-### Optimistic Locking ‚Ä" ABA Prevention
+### Optimistic Locking ?" ABA Prevention
 
 ```
 Problem: Two users act on same invoice simultaneously
@@ -63,24 +63,24 @@ Problem: Two users act on same invoice simultaneously
 
 Solution: Version-based optimistic locking
 
-GET /invoices/1001 ‚Ü' response includes "version": 1
+GET /invoices/1001 ?' response includes "version": 1
                      response header: ETag: "1"
 
 POST /invoices/1001/approve
-If-Match: "1"   ‚Üê must match current version
+If-Match: "1"   ? must match current version
 
 Server:
 UPDATE invoice SET status='APPROVED', version=version+1
-WHERE id='1001' AND version=1   ‚Üê exact version check
+WHERE id='1001' AND version=1   ? exact version check
 
-0 rows updated ‚Ü' 409 Conflict ‚Ü' "Please refresh"
-1 row updated  ‚Ü' success ‚úÖ
+0 rows updated ?' 409 Conflict ?' "Please refresh"
+1 row updated  ?' success ?
 
 Why NOT Redis locks:
-‚Ü' Redis is in-memory, not durable
-‚Ü' Redis down = lock lost = double processing
-‚Ü' Financial systems need DB-level locking only
-‚Ü' PostgreSQL version column = ACID guaranteed
+?' Redis is in-memory, not durable
+?' Redis down = lock lost = double processing
+?' Financial systems need DB-level locking only
+?' PostgreSQL version column = ACID guaranteed
 ```
 
 The version starts at 1 and increments on every invoice mutation, including
@@ -102,25 +102,25 @@ status, balance, payment allocation, and credit memo changes.
 ### HTTP Status Codes
 
 ```
-200 ‚Ü' success (GET, state change)
-201 ‚Ü' created (POST new resource)
-202 ‚Ü' accepted (async bulk operations)
-400 ‚Ü' bad request (validation failed)
-401 ‚Ü' unauthorized (invalid/expired JWT)
-403 ‚Ü' forbidden (wrong role or SOX violation)
-404 ‚Ü' not found
-409 ‚Ü' conflict (version mismatch / request in progress / idempotency key misuse)
-422 ‚Ü' unprocessable (business rule violation)
-423 ‚Ü' locked (accounting period closed/locked)
-500 ‚Ü' server error
+200 ?' success (GET, state change)
+201 ?' created (POST new resource)
+202 ?' accepted (async bulk operations)
+400 ?' bad request (validation failed)
+401 ?' unauthorized (invalid/expired JWT)
+403 ?' forbidden (wrong role or SOX violation)
+404 ?' not found
+409 ?' conflict (version mismatch / request in progress / idempotency key misuse)
+422 ?' unprocessable (business rule violation)
+423 ?' locked (accounting period closed/locked)
+500 ?' server error
 ```
 
 ### Synchronous vs Async
 
 ```
-Single operations  ‚Ü' synchronous (< 300ms p99)
-Bulk operations    ‚Ü' async (202 Accepted + job_id)
-External effects   ‚Ü' always async (email, PDF, webhooks)
+Single operations  ?' synchronous (< 300ms p99)
+Bulk operations    ?' async (202 Accepted + job_id)
+External effects   ?' always async (email, PDF, webhooks)
 
 Polling async jobs:
 GET /jobs/{job_id}
@@ -134,7 +134,7 @@ GET /jobs/{job_id}
 
 ---
 
-## API1 ‚Ä" POST /invoices
+## API1 ?" POST /invoices
 
 [View API1 happy-path flow](flows/api1_post_invoices_flow.svg)
 
@@ -177,18 +177,18 @@ Content-Type: application/json
 }
 ```
 
-**NOT in request body ‚Ä" server derives these:**
+**NOT in request body ?" server derives these:**
 ```
-tenant_id    ‚Üê from JWT (never trust client)
-entity_id    ‚Üê from JWT (never trust client)
-status       ‚Üê always DRAFT on creation
-total_amount ‚Üê calculated by server (sum of line items)
-due_date     ‚Üê calculated: invoice_date + payment_terms
+tenant_id    ? from JWT (never trust client)
+entity_id    ? from JWT (never trust client)
+status       ? always DRAFT on creation
+total_amount ? calculated by server (sum of line items)
+due_date     ? calculated: invoice_date + payment_terms
                server owns all financial date calculations
                client cannot manipulate due dates
-base_currency    ‚Üê entity.currency
-exchange_rate_id ‚Üê approved rate selected for invoice_date
-base amounts     ‚Üê transaction amounts √-- locked exchange rate
+base_currency    ? entity.currency
+exchange_rate_id ? approved rate selected for invoice_date
+base amounts     ? transaction amounts ?-- locked exchange rate
 ```
 
 For INR, the conversion rate is 1. For USD, EUR, CNY, GBP, JPY, CHF or CAD,
@@ -196,7 +196,7 @@ the server selects the latest approved rate on/before `invoice_date`, no more
 than three calendar days old. A missing/stale rate returns
 `503 FX_RATE_UNAVAILABLE`; it never silently falls back to 1.0.
 
-### Response ‚Ä" HTTP 201 Created
+### Response ?" HTTP 201 Created
 
 ```json
 {
@@ -256,16 +256,16 @@ than three calendar days old. A missing/stale rate returns
 ### Error Cases
 
 ```
-400 ‚Ü' missing required fields (customer_id, line_items)
-403 ‚Ü' user lacks invoice_creator role
-404 ‚Ü' customer_id not found
-409 ‚Ü' REQUEST_IN_PROGRESS (same request is still processing)
-409 ‚Ü' IDEMPOTENCY_KEY_REUSED (same key, different request payload)
-422 ‚Ü' customer exceeded credit limit
-422 ‚Ü' invalid tax_jurisdiction
-422 ‚Ü' line item quantity or price <= 0
-422 ‚Ü' unsupported currency
-503 ‚Ü' FX_RATE_UNAVAILABLE (no approved rate within three calendar days)
+400 ?' missing required fields (customer_id, line_items)
+403 ?' user lacks invoice_creator role
+404 ?' customer_id not found
+409 ?' REQUEST_IN_PROGRESS (same request is still processing)
+409 ?' IDEMPOTENCY_KEY_REUSED (same key, different request payload)
+422 ?' customer exceeded credit limit
+422 ?' invalid tax_jurisdiction
+422 ?' line item quantity or price <= 0
+422 ?' unsupported currency
+503 ?' FX_RATE_UNAVAILABLE (no approved rate within three calendar days)
 ```
 
 Base subtotal and tax are rounded independently to four decimal places; base
@@ -274,7 +274,7 @@ directly converting the transaction total would differ by a rounding unit.
 
 ---
 
-## API2 ‚Ä" GET /invoices/{id}
+## API2 ?" GET /invoices/{id}
 
 [View API2 happy-path flow](flows/api2_get_invoice_flow.svg)
 
@@ -290,13 +290,13 @@ GET /api/v1/invoices/uuid-1001
 Authorization: Bearer <jwt>
 ```
 
-No idempotency key needed ‚Ä" GET is read-only, no state changes.
+No idempotency key needed ?" GET is read-only, no state changes.
 
-### Response ‚Ä" HTTP 200 OK
+### Response ?" HTTP 200 OK
 
 **Response Headers:**
 ```
-ETag: "5"   ‚Üê version number, used as If-Match on subsequent writes
+ETag: "5"   ? version number, used as If-Match on subsequent writes
 ```
 
 ```json
@@ -392,19 +392,19 @@ ETag: "5"   ‚Üê version number, used as If-Match on subsequent writes
 ### Error Cases
 
 ```
-401 ‚Ü' invalid/expired JWT
-403 ‚Ü' invoice belongs to different entity
-404 ‚Ü' invoice not found
+401 ?' invalid/expired JWT
+403 ?' invoice belongs to different entity
+404 ?' invoice not found
 ```
 
 ---
 
-## API3 ‚Ä" POST /invoices/{id}/approve
+## API3 ?" POST /invoices/{id}/approve
 
 [View API3 happy-path flow](flows/api3_approve_invoice_flow.svg)
 
 Approves invoice. Generates GL journal entry atomically.
-Synchronous ‚Ä" single DB transaction, target < 300ms p99.
+Synchronous ?" single DB transaction, target < 300ms p99.
 
 **Required role:** `invoice_approver` or `cfo`
 **SOX requirement:** approver must differ from creator
@@ -413,9 +413,9 @@ Synchronous ‚Ä" single DB transaction, target < 300ms p99.
 
 ```
 POST /api/v1/invoices/uuid-1001/approve
-Authorization: Bearer <jwt>   ‚Üê Priya's token
+Authorization: Bearer <jwt>   ? Priya's token
 X-Idempotency-Key: "550e8400-e29b-41d4-a716"
-If-Match: "1"                 ‚Üê version from GET response
+If-Match: "1"                 ? version from GET response
 Content-Type: application/json
 ```
 
@@ -428,8 +428,8 @@ Content-Type: application/json
 ### Atomic Operations (ONE DB transaction)
 
 ```
-1.  Check idempotency key ‚Ü' already COMPLETED‚Ü' return cached response
-2.  Validate If-Match version ‚Ü' mismatch‚Ü' 409 Conflict
+1.  Check idempotency key ?' already COMPLETED?' return cached response
+2.  Validate If-Match version ?' mismatch?' 409 Conflict
 3.  Validate invoice status = DRAFT
 4.  Check approver role (invoice_approver or cfo)
 5.  Check SOX: approver_id != created_by
@@ -438,14 +438,14 @@ Content-Type: application/json
     Debit:  1200 AR           174000
     Credit: 3100 Revenue      150000
     Credit: 2200 Tax Payable   24000
-8.  Update invoice status ‚Ü' APPROVED
-9.  Increment version (1 ‚Ü' 2)
+8.  Update invoice status ?' APPROVED
+9.  Increment version (1 ?' 2)
 10. Insert PENDING invoice-delivery outbox event
 11. Mark idempotency key COMPLETED
 12. Write audit log
 ```
 
-### Response ‚Ä" HTTP 200 OK
+### Response ?" HTTP 200 OK
 
 ```json
 {
@@ -460,7 +460,7 @@ Content-Type: application/json
 }
 ```
 
-Minimal response ‚Ä" client already has full invoice from GET.
+Minimal response ?" client already has full invoice from GET.
 Full details available via GET /invoices/{id} with new version.
 
 After commit, an outbox publisher claims the event using `FOR UPDATE SKIP
@@ -473,17 +473,17 @@ to SENT; a later payment status is never overwritten.
 ### Error Cases
 
 ```
-403 ‚Ü' user lacks invoice_approver role
-403 ‚Ü' approver same as creator (SOX violation!)
+403 ?' user lacks invoice_approver role
+403 ?' approver same as creator (SOX violation!)
       "Creator cannot approve their own invoice"
-404 ‚Ü' invoice not found
-409 ‚Ü' REQUEST_IN_PROGRESS (same request is still processing)
-409 ‚Ü' IDEMPOTENCY_KEY_REUSED (same key, different request payload)
-409 ‚Ü' If-Match version mismatch (ABA problem!)
+404 ?' invoice not found
+409 ?' REQUEST_IN_PROGRESS (same request is still processing)
+409 ?' IDEMPOTENCY_KEY_REUSED (same key, different request payload)
+409 ?' If-Match version mismatch (ABA problem!)
       "Invoice was modified since last viewed. Please refresh."
-422 ‚Ü' invoice not in DRAFT status
+422 ?' invoice not in DRAFT status
       "Cannot approve invoice with status: APPROVED"
-423 ‚Ü' accounting period CLOSED or LOCKED
+423 ?' accounting period CLOSED or LOCKED
       CLOSED: CFO may reopen with a mandatory audited reason, then retry
       LOCKED: never reopen; use a CFO-approved current-period adjustment
 ```
@@ -497,9 +497,9 @@ system never silently shifts or backdates an entry.
 
 ```
 POST /api/v1/invoices/bulk-approve
-‚Ü' async bulk approval
-‚Ü' 202 Accepted + job_id
-‚Ü' client polls GET /jobs/{job_id}
+?' async bulk approval
+?' 202 Accepted + job_id
+?' client polls GET /jobs/{job_id}
 ```
 
 ---
@@ -555,7 +555,7 @@ approval and journal remain financial truth throughout an adapter outage.
 
 ---
 
-## API4 ‚Ä" POST /payments
+## API4 ?" POST /payments
 
 [View API4 happy-path flow](flows/api4_post_payments_flow.svg)
 
@@ -564,7 +564,7 @@ Supports AUTO (FIFO) and MANUAL allocation modes.
 
 **Required role:** `payment_recorder` or `cfo`
 
-### Request ‚Ä" AUTO Mode (FIFO)
+### Request ?" AUTO Mode (FIFO)
 
 ```
 POST /api/v1/payments
@@ -588,7 +588,7 @@ Content-Type: application/json
 }
 ```
 
-### Request ‚Ä" MANUAL Mode
+### Request ?" MANUAL Mode
 
 ```json
 {
@@ -615,35 +615,35 @@ while asynchronous delivery is pending or being retried.
 
 ```
 Customer:
-‚Ü' customer_id exists and belongs to tenant
-‚Ü' customer is active
+?' customer_id exists and belongs to tenant
+?' customer is active
 
 Invoices (AUTO mode):
-‚Ü' customer has open invoices
-‚Ü' invoices in APPROVED/SENT/PARTIALLY_PAID status only
-‚Ü' not DRAFT/VOID/WRITTEN_OFF
+?' customer has open invoices
+?' invoices in APPROVED/SENT/PARTIALLY_PAID status only
+?' not DRAFT/VOID/WRITTEN_OFF
 
 Invoices (MANUAL mode):
-‚Ü' each invoice_id exists and belongs to customer
-‚Ü' each invoice is in APPROVED/SENT/PARTIALLY_PAID status
-‚Ü' sum of allocations <= payment amount
-‚Ü' each allocation <= invoice outstanding balance
+?' each invoice_id exists and belongs to customer
+?' each invoice is in APPROVED/SENT/PARTIALLY_PAID status
+?' sum of allocations <= payment amount
+?' each allocation <= invoice outstanding balance
 
 Amount:
-‚Ü' amount > 0
-‚Ü' no allocation exceeds invoice balance
+?' amount > 0
+?' no allocation exceeds invoice balance
 
 Currency:
-‚Ü' currency is one of INR, USD, EUR, CNY, GBP, JPY, CHF, CAD
-‚Ü' every allocated invoice has the same transaction currency as the payment
-‚Ü' latest approved rate on/before payment_date is no more than 3 days old
-‚Ü' missing/stale foreign rate rejects the complete transaction
+?' currency is one of INR, USD, EUR, CNY, GBP, JPY, CHF, CAD
+?' every allocated invoice has the same transaction currency as the payment
+?' latest approved rate on/before payment_date is no more than 3 days old
+?' missing/stale foreign rate rejects the complete transaction
 
 Duplicate prevention:
-‚Ü' COMPLETED key + same request hash replays cached 201 response
-‚Ü' PROCESSING key + same request hash returns 409 REQUEST_IN_PROGRESS
-‚Ü' same key + different request hash returns 409 IDEMPOTENCY_KEY_REUSED
-‚Ü' payment_reference unique within tenant + customer
+?' COMPLETED key + same request hash replays cached 201 response
+?' PROCESSING key + same request hash returns 409 REQUEST_IN_PROGRESS
+?' same key + different request hash returns 409 IDEMPOTENCY_KEY_REUSED
+?' payment_reference unique within tenant + customer
    (prevents double RTGS processing)
 ```
 
@@ -657,11 +657,11 @@ Duplicate prevention:
 5. Store original HTTP status + response; mark key COMPLETED
 6. Commit everything together
 
-Crash before commit ‚Ü' all changes, including PROCESSING key, roll back
-Crash after commit  ‚Ü' retry replays cached response
+Crash before commit ?' all changes, including PROCESSING key, roll back
+Crash after commit  ?' retry replays cached response
 ```
 
-### Response ‚Ä" HTTP 201 Created
+### Response ?" HTTP 201 Created
 
 ```json
 {
@@ -725,7 +725,7 @@ Overpayment example (payment > total outstanding):
   "allocated_amount": 300000,
   "unallocated_amount": 100000,
   "overpayment_amount": 100000,
-  "overpayment_action": "ON_ACCOUNT",  ‚Üê REFUND/ON_ACCOUNT/ADVANCE
+  "overpayment_action": "ON_ACCOUNT",  ? REFUND/ON_ACCOUNT/ADVANCE
   ...
 }
 
@@ -739,13 +739,13 @@ Exchange rate warning example (rate missing for payment date):
 }
 ```
 
-**Idempotency key in response** ‚Ä" for audit trail and debugging.
+**Idempotency key in response** ?" for audit trail and debugging.
 Support team can trace any payment dispute to exact request.
 
 **GL entries generated automatically:**
 ```
-Debit:  1100 Cash    300000  ‚Üê money arrived
-Credit: 1200 AR      300000  ‚Üê debt cleared
+Debit:  1100 Cash    300000  ? money arrived
+Credit: 1200 AR      300000  ? debt cleared
 ```
 
 For an INR 400,000 receipt against INR 300,000 outstanding:
@@ -753,7 +753,7 @@ For an INR 400,000 receipt against INR 300,000 outstanding:
 ```text
 Debit:  1100 Cash             400000
 Credit: 1200 AR               300000
-Credit: 2100 Customer Credit  100000  ‚Üê unapplied liability
+Credit: 2100 Customer Credit  100000  ? unapplied liability
 ```
 
 **FX payment GL entries (USD document, INR legal books):**
@@ -770,20 +770,20 @@ column would mix units and make the document-currency journal meaningless.
 ### Error Cases
 
 ```
-400 ‚Ü' missing required fields
-403 ‚Ü' user lacks payment_recorder role
-404 ‚Ü' customer_id not found
-404 ‚Ü' invoice_id not found (manual mode)
-409 ‚Ü' REQUEST_IN_PROGRESS (same request is still processing)
-409 ‚Ü' IDEMPOTENCY_KEY_REUSED (same key, different request payload)
-409 ‚Ü' duplicate payment_reference for same customer
-422 ‚Ü' amount <= 0
-422 ‚Ü' allocation exceeds invoice outstanding balance
-422 ‚Ü' sum of manual allocations > payment amount
-422 ‚Ü' invoice not in payable status (DRAFT/VOID/WRITTEN_OFF)
-422 ‚Ü' no open invoices found (auto mode)
-422 ‚Ü' payment and allocated invoice currencies differ (V1)
-503 ‚Ü' no approved exchange rate within three calendar days
+400 ?' missing required fields
+403 ?' user lacks payment_recorder role
+404 ?' customer_id not found
+404 ?' invoice_id not found (manual mode)
+409 ?' REQUEST_IN_PROGRESS (same request is still processing)
+409 ?' IDEMPOTENCY_KEY_REUSED (same key, different request payload)
+409 ?' duplicate payment_reference for same customer
+422 ?' amount <= 0
+422 ?' allocation exceeds invoice outstanding balance
+422 ?' sum of manual allocations > payment amount
+422 ?' invoice not in payable status (DRAFT/VOID/WRITTEN_OFF)
+422 ?' no open invoices found (auto mode)
+422 ?' payment and allocated invoice currencies differ (V1)
+503 ?' no approved exchange rate within three calendar days
 ```
 
 The provider is never called synchronously by API1/API4. pg_cron creates a
@@ -795,23 +795,23 @@ contracts are in [FX Rate Ingestion and Multi-Currency Design](fx-rate-design.md
 
 ```
 POST /api/v1/payments/bulk
-‚Ü' async bulk payment import
-‚Ü' 202 Accepted + job_id
-‚Ü' client polls GET /jobs/{job_id}
+?' async bulk payment import
+?' 202 Accepted + job_id
+?' client polls GET /jobs/{job_id}
 
 POST /api/v1/payments/webhook
-‚Ü' payment gateway webhook handler
-‚Ü' Stripe/Razorpay payment confirmation
+?' payment gateway webhook handler
+?' Stripe/Razorpay payment confirmation
 ```
 
 ---
 
-## API5 ‚Ä" GET /customers/{id}/aging
+## API5 ?" GET /customers/{id}/aging
 
 [View combined API5/API6 reporting flow](flows/api5_api6_flows.svg)
 
 Returns AR aging summary for a customer.
-Reads from materialized view ‚Ä" refreshed every 5 minutes.
+Reads from materialized view ?" refreshed every 5 minutes.
 Shows explicit as_of timestamp so user knows data freshness.
 
 **Required role:** Any authenticated user of same entity
@@ -820,13 +820,13 @@ Shows explicit as_of timestamp so user knows data freshness.
 
 ```
 GET /api/v1/customers/uuid-tata-steel/aging
-    ‚Ü'entity_id=uuid-retail
+    ?'entity_id=uuid-retail
 Authorization: Bearer <jwt>
 ```
 
 **Query Parameters:**
 ```
-entity_id  ‚Üê optional, defaults to JWT entity
+entity_id  ? optional, defaults to JWT entity
 ```
 
 The prototype returns current aging only. The response `as_of` value is the
@@ -836,13 +836,13 @@ states (`APPROVED`, `SENT`, `PARTIALLY_PAID`). DRAFT invoices are not yet AR.
 
 No idempotency key or ETag needed:
 ```
-‚Ü' GET is read only
-‚Ü' Aging data is informational
-‚Ü' Client acts on individual invoices (each has own version)
-‚Ü' Not on the aging summary itself
+?' GET is read only
+?' Aging data is informational
+?' Client acts on individual invoices (each has own version)
+?' Not on the aging summary itself
 ```
 
-### Response ‚Ä" HTTP 200 OK
+### Response ?" HTTP 200 OK
 
 ```json
 {
@@ -883,11 +883,11 @@ No idempotency key or ETag needed:
 ### Error Cases
 
 ```
-403 ‚Ü' customer belongs to different tenant
-404 ‚Ü' customer not found
+403 ?' customer belongs to different tenant
+404 ?' customer not found
 ```
 
-### Future Enhancement ‚Ä" Historical Aging
+### Future Enhancement ?" Historical Aging
 
 A historical `as_of` query must reconstruct the balance from dated payments,
 allocations, credit memos, write-offs, voids, and reversals, or read from
@@ -896,7 +896,7 @@ persisted daily snapshots. It cannot use the invoice's current
 
 ---
 
-## API6 ‚Ä" GET /journal-entries
+## API6 ?" GET /journal-entries
 
 [View combined API5/API6 reporting flow](flows/api5_api6_flows.svg)
 
@@ -913,7 +913,7 @@ the prototype never treats a role claim alone as permission to cross entities.
 
 ```
 GET /api/v1/journal-entries
-    ‚Ü'invoice=uuid-1001
+    ?'invoice=uuid-1001
     &page=1
     &page_size=20
 Authorization: Bearer <jwt>
@@ -921,16 +921,16 @@ Authorization: Bearer <jwt>
 
 **Query Parameters:**
 ```
-invoice      ‚Üê REQUIRED primary filter (invoice ID)
-payment_id   ‚Üê optional additional filter
-from_date    ‚Üê optional date range start
-to_date      ‚Üê optional date range end
-account_code ‚Üê optional GL account filter
-page         ‚Üê default 1
-page_size    ‚Üê default 20, max 100
+invoice      ? REQUIRED primary filter (invoice ID)
+payment_id   ? optional additional filter
+from_date    ? optional date range start
+to_date      ? optional date range end
+account_code ? optional GL account filter
+page         ? default 1
+page_size    ? default 20, max 100
 ```
 
-### Response ‚Ä" HTTP 200 OK
+### Response ?" HTTP 200 OK
 
 ```json
 {
@@ -1028,7 +1028,7 @@ page_size    ‚Üê default 20, max 100
       "reference_id": "uuid-CM001",
       "document_date": "2024-01-25",
       "entry_date": "2024-01-25",
-      "description": "Credit memo CM001 ‚Ä" goods returned",
+      "description": "Credit memo CM001 ?" goods returned",
       "created_by": "priya-uuid",
       "currency": "INR",
       "base_currency": "INR",
@@ -1073,7 +1073,7 @@ page_size    ‚Üê default 20, max 100
 For foreign documents, transaction fields retain the document currency while
 `base_*` fields show the INR amounts posted to the legal books.
 **`balanced: true`** means both representations independently balance.
-If ever `false` ‚Ü' system RED alert, immediate investigation!
+If ever `false` ?' system RED alert, immediate investigation!
 
 Pagination applies only to `journal_entries`; `summary` always represents all
 journal entries for the invoice. Requests beyond `total_pages` return HTTP 200
@@ -1083,14 +1083,14 @@ without treating it as a missing resource.
 ### Error Cases
 
 ```
-400 ‚Ü' invoice_id not provided (required filter)
-403 ‚Ü' invoice belongs to different tenant
-404 ‚Ü' invoice not found
+400 ?' invoice_id not provided (required filter)
+403 ?' invoice belongs to different tenant
+404 ?' invoice not found
 ```
 
 ---
 
-## API7 ‚Ä" GET /health
+## API7 ?" GET /health
 
 Health check endpoint for Docker and load balancer.
 
@@ -1100,9 +1100,9 @@ Health check endpoint for Docker and load balancer.
 GET /health
 ```
 
-No auth required ‚Ä" used by infrastructure.
+No auth required ?" used by infrastructure.
 
-### Response ‚Ä" HTTP 200 OK
+### Response ?" HTTP 200 OK
 
 ```json
 {
@@ -1118,7 +1118,7 @@ No auth required ‚Ä" used by infrastructure.
 }
 ```
 
-### Response ‚Ä" HTTP 503 Service Unavailable
+### Response ?" HTTP 503 Service Unavailable
 
 ```json
 {
@@ -1149,28 +1149,28 @@ same extended acceptance remains pending for write-off and void.
 ### Additional Write APIs (Phase 2)
 
 ```
-POST /invoices/{id}/send          ‚Üê FR3: send invoice to customer
-POST /journal-entries/manual      ‚Üê Future-FR2: manual journal entry
-POST /periods/{id}/close          ‚Üê Future-FR3: close accounting period
-POST /periods/{id}/reopen         ‚Üê Future-FR3: CFO reopens CLOSED with reason
-POST /periods/{id}/lock           ‚Üê Future-FR3: lock accounting period
-POST /users                       ‚Üê Future-FR4: create user
-POST /users/{id}/roles            ‚Üê Future-FR4: assign role
+POST /invoices/{id}/send          ? FR3: send invoice to customer
+POST /journal-entries/manual      ? Future-FR2: manual journal entry
+POST /periods/{id}/close          ? Future-FR3: close accounting period
+POST /periods/{id}/reopen         ? Future-FR3: CFO reopens CLOSED with reason
+POST /periods/{id}/lock           ? Future-FR3: lock accounting period
+POST /users                       ? Future-FR4: create user
+POST /users/{id}/roles            ? Future-FR4: assign role
 ```
 
 ### Bulk Operations (Phase 2)
 
 ```
-POST /invoices/bulk-approve       ‚Üê async, 202 Accepted
-POST /invoices/bulk               ‚Üê async, 202 Accepted
-POST /payments/bulk               ‚Üê async, 202 Accepted
-GET  /jobs/{job_id}               ‚Üê poll async job status
+POST /invoices/bulk-approve       ? async, 202 Accepted
+POST /invoices/bulk               ? async, 202 Accepted
+POST /payments/bulk               ? async, 202 Accepted
+GET  /jobs/{job_id}               ? poll async job status
 ```
 
 ### Reporting APIs (Phase 2)
 
 ```
-GET /reports/consolidated         ‚Üê Future-FR1: intercompany consolidation
-GET /reports/reconciliation       ‚Üê FR9: AR vs GL reconciliation status
-GET /audit-log                    ‚Üê FR12: SOX audit trail
+GET /reports/consolidated         ? Future-FR1: intercompany consolidation
+GET /reports/reconciliation       ? FR9: AR vs GL reconciliation status
+GET /audit-log                    ? FR12: SOX audit trail
 ```

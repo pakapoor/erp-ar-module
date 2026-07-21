@@ -139,7 +139,7 @@ Run coverage:
 
 Start here for a full walkthrough:
 
-- [Technical Walkthrough](docs/interview-walkthrough.md) - narrative + Q&A
+- [Technical Walkthrough](docs/walkthrough.md) - narrative + Q&A
 - [Requirements Traceability](docs/requirements-traceability.md) - what is done vs deferred
 - [High Level Design](docs/high-level-design.md) - architecture diagrams
 - [API Design](docs/api-design.md) - endpoint contracts
@@ -198,7 +198,7 @@ erp-ar-module/
 |   |-- integration/
 |   +-- concurrency/
 +-- docs/
-    |-- interview-walkthrough.md
+    |-- walkthrough.md
     |-- architecture.svg
     |-- high-level-design.md
     |-- flows/                   API flow diagrams

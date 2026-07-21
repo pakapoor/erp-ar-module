@@ -1,4 +1,4 @@
-# Principal Engineer ERP Assessment â€" Consolidated Submission
+# Principal Engineer ERP Assessment ?" Consolidated Submission
 
 ## 1. Scope and Design Position
 
@@ -42,7 +42,7 @@ Production hardening: run through a non-owner database role, enable `FORCE ROW L
 ### Currency model
 
 Invoices and payments store transaction currency, locked exchange-rate ID/rate,
-base currency, and base amounts. A scheduled worker derives approved foreignâ†'INR
+base currency, and base amounts. A scheduled worker derives approved foreign?'INR
 rates from ECB data. The integration suite verifies USD invoice approval,
 partial/final settlement, realized gain/loss, stale-rate failure and rejection
 of unsupported cross-currency allocation. Period-end unrealized revaluation is
@@ -113,7 +113,7 @@ Approval requires a separate approver, an OPEN document-date period, an idempote
 | Approve invoice | `POST /api/v1/invoices/{id}/approve` | Status/version and GL asserted |
 | Record payment | `POST /api/v1/payments` | Allocation/balance and retry asserted |
 | Customer aging | `GET /api/v1/customers/{id}/aging` | INR 74,000 current bucket asserted |
-| Invoice journals | `GET /api/v1/journal-entriesâ†'invoice={id}` | Two balanced entries and net AR asserted |
+| Invoice journals | `GET /api/v1/journal-entries?'invoice={id}` | Two balanced entries and net AR asserted |
 
 Bonus credit-memo controls are complete. DRAFT-void and write-off happy paths
 pass with final reconciliation, but their extended controls remain
@@ -176,28 +176,28 @@ AI tools used:
 - GitHub Copilot: code assistance during prototype construction.
 - Codex: repository review, implementation fixes, Docker debugging, and integration verification.
 
-The project was expanded beyond the original 3â€"4 hour timebox as an interactive learning and interview-walkthrough artifact. The candidate should add truthful approximate time spent on design, prototype, controls, and experience sections in the README before submission.
+The project was expanded beyond the original 3?"4 hour timebox as an interactive learning and walkthrough artifact. The candidate should add truthful approximate time spent on design, prototype, controls, and experience sections in the README before submission.
 
 
 ## 9. Accounting Standards and Assumptions
 
 ### GAAP vs IFRS Position
 
-This prototype is designed to be standards-neutral at the data model level â€" the schema stores both transaction currency and base currency amounts, captures document date separately from posting date, and supports the period-close and prior-period correction workflows required under both GAAP and IFRS. The following explicit assumptions apply:
+This prototype is designed to be standards-neutral at the data model level ?" the schema stores both transaction currency and base currency amounts, captures document date separately from posting date, and supports the period-close and prior-period correction workflows required under both GAAP and IFRS. The following explicit assumptions apply:
 
-**Revenue recognition:** The prototype assumes point-in-time revenue recognition under ASC 606 (GAAP) / IFRS 15 â€" revenue is recognised when the invoice is approved, meaning the performance obligation (goods or services delivered) is treated as satisfied at that moment. Deferred revenue for multi-period or subscription arrangements requires a separate deferred revenue GL account and recognition schedule, which is designed but not implemented in this prototype (see Section 10 below).
+**Revenue recognition:** The prototype assumes point-in-time revenue recognition under ASC 606 (GAAP) / IFRS 15 ?" revenue is recognised when the invoice is approved, meaning the performance obligation (goods or services delivered) is treated as satisfied at that moment. Deferred revenue for multi-period or subscription arrangements requires a separate deferred revenue GL account and recognition schedule, which is designed but not implemented in this prototype (see Section 10 below).
 
-**Receivables:** AR is recorded at invoice total (net of tax under IFRS, gross under US GAAP where tax is a liability). This prototype uses the IFRS-aligned approach â€" revenue is credited at the subtotal amount and tax payable is a separate liability credit â€" which also aligns with GST/VAT treatment in Indian mid-market ERP (the scenario currency is INR).
+**Receivables:** AR is recorded at invoice total (net of tax under IFRS, gross under US GAAP where tax is a liability). This prototype uses the IFRS-aligned approach ?" revenue is credited at the subtotal amount and tax payable is a separate liability credit ?" which also aligns with GST/VAT treatment in Indian mid-market ERP (the scenario currency is INR).
 
 **Foreign currency:** Monetary items (AR, cash) are retranslated at the closing rate under IAS 21 / ASC 830. The prototype locks invoice- and payment-date rates and posts realised FX gain/loss on settlement. Full retranslation at period-end closing rates is a production requirement documented in fx-rate-design.md but not implemented in the prototype.
 
-**Period close:** The OPEN/CLOSED/LOCKED period model aligns with both GAAP and IFRS requirements. No entries post to a closed period; prior-period adjustments in a locked period use a current-period adjustment entry preserving the original document date â€" consistent with IAS 8 / ASC 250 requirements for correction of errors.
+**Period close:** The OPEN/CLOSED/LOCKED period model aligns with both GAAP and IFRS requirements. No entries post to a closed period; prior-period adjustments in a locked period use a current-period adjustment entry preserving the original document date ?" consistent with IAS 8 / ASC 250 requirements for correction of errors.
 
-**Assumption on tax:** Tax collected from customers (GST/VAT) is a liability, not revenue. The GL entry on approval credits Tax Payable (2200), not Revenue â€" consistent with both GAAP and IFRS treatment of pass-through taxes.
+**Assumption on tax:** Tax collected from customers (GST/VAT) is a liability, not revenue. The GL entry on approval credits Tax Payable (2200), not Revenue ?" consistent with both GAAP and IFRS treatment of pass-through taxes.
 
 ---
 
-## 10. Revenue Recognition â€" V2 Decision
+## 10. Revenue Recognition ?" V2 Decision
 
 ### Current Implementation
 
@@ -206,7 +206,7 @@ The prototype implements **point-in-time recognition** under ASC 606 / IFRS 15 P
 GL entry on approval:
 ```
 Dr  Accounts Receivable  174,000   (total including tax)
-Cr  Sales Revenue        150,000   (subtotal â€" performance obligation satisfied)
+Cr  Sales Revenue        150,000   (subtotal ?" performance obligation satisfied)
 Cr  Tax Payable           24,000   (government liability, not revenue)
 ```
 
@@ -217,7 +217,7 @@ For subscription, retainer, or multi-period service contracts, revenue must be d
 1. On invoice approval, credit **Deferred Revenue** (liability) instead of Sales Revenue:
 ```
 Dr  Accounts Receivable  12,000   (annual subscription)
-Cr  Deferred Revenue     12,000   (liability â€" not yet earned)
+Cr  Deferred Revenue     12,000   (liability ?" not yet earned)
 ```
 
 2. Monthly recognition job transfers earned portion to revenue:
@@ -228,7 +228,7 @@ Cr  Sales Revenue        1,000   (earned this period)
 
 3. The invoice line item requires a `recognition_type` field (IMMEDIATE or OVER_TIME), a `recognition_start_date`, `recognition_end_date`, and a `recognition_schedule` that drives the monthly journal.
 
-4. The AR aging and balance sheet must distinguish between billed AR (cash expected) and unearned revenue (service still owed) â€" these are separate concerns that the Tenant â†' Entity â†' Period model supports.
+4. The AR aging and balance sheet must distinguish between billed AR (cash expected) and unearned revenue (service still owed) ?" these are separate concerns that the Tenant ?' Entity ?' Period model supports.
 
 This is a deliberate V2 decision, not an incomplete V1 claim. The required
 prototype remains scoped to invoices for goods or services whose performance
@@ -241,7 +241,7 @@ allocation policy, schedule granularity, contract-modification/cancellation
 rules, period-close behavior and cumulative catch-up treatment. Deferring the
 code avoids presenting a simplistic monthly job as ASC 606/IFRS 15 compliance.
 
-## 11. Intercompany Elimination â€" V2 Decision
+## 11. Intercompany Elimination ?" V2 Decision
 
 An intercompany invoice produces valid entries in two legal-entity ledgers:
 the seller records Intercompany AR and Revenue, while the buyer records an
