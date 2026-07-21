@@ -955,7 +955,7 @@ async def approve_invoice(
             content=existing.response_body
         )
 
-    # ── Fetch invoice with Repeatable Read ─────────────────
+    # ── Fetch invoice; version CAS below is the concurrency guard ──
     result = await db.execute(
         select(Invoice).where(
             and_(

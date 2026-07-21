@@ -585,6 +585,149 @@ API7_RESPONSE="$(curl --fail-with-body --silent --show-error "$BASE_URL/health")
 pretty_print "$API7_RESPONSE"
 assert_json "$API7_RESPONSE" 'data["status"] == "healthy" and data["checks"]["reconciliation_status"] == "MATCHED"' "API7 reports healthy and reconciled"
 
+echo "=== API3b: reject, patch, and re-approve ==="
+RP_CREATE_KEY="$(new_uuid)"
+RP_REJECT_KEY="$(new_uuid)"
+RP_PATCH_KEY="$(new_uuid)"
+RP_REAPPROVE_KEY="$(new_uuid)"
+RP_PAYMENT_KEY="$(new_uuid)"
+RP_PAYMENT_REFERENCE="RP-PAY-$(new_uuid)"
+
+RP_API1_RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/invoices" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Idempotency-Key: $RP_CREATE_KEY" \
+  -d '{
+    "customer_id": "00000000-0000-0000-0000-000000000005",
+    "po_reference": "REJECT-PATCH-TEST",
+    "invoice_date": "2026-07-19",
+    "payment_terms": "NET30",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Safety Valves",
+        "quantity": 10,
+        "unit_price": 5000,
+        "tax_rate": 18,
+        "tax_jurisdiction": "MH"
+      }
+    ]
+  }')"
+pretty_print "$RP_API1_RESPONSE"
+RP_INVOICE_ID="$(JSON_RESPONSE="$RP_API1_RESPONSE" python3 -c 'import json, os; print(json.loads(os.environ["JSON_RESPONSE"])["id"])')"
+
+# Reject: same role/SOX guard as approve, invoice stays DRAFT with a reason,
+# no GL entry and no delivery event.
+RP_REJECT_RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/invoices/$RP_INVOICE_ID/approve" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: $RP_REJECT_KEY" \
+  -H "If-Match: 1" \
+  -d '{"action": "REJECT", "rejection_reason": "Wrong tax jurisdiction -- should be KA not MH"}')"
+pretty_print "$RP_REJECT_RESPONSE"
+assert_json "$RP_REJECT_RESPONSE" 'data["version"] == 2 and "journal_entry_id" not in data' "API3b reject increments version and posts no GL entry"
+assert_json "$RP_REJECT_RESPONSE" 'data["rejection_reason"].startswith("Wrong tax jurisdiction")' "API3b reject stores the rejection reason"
+
+RP_JOURNAL_AFTER_REJECT="$(curl --fail-with-body --silent --show-error \
+  "$BASE_URL/api/v1/journal-entries?invoice=$RP_INVOICE_ID" \
+  -H "Authorization: Bearer $TOKEN")"
+assert_json "$RP_JOURNAL_AFTER_REJECT" 'len(data["journal_entries"]) == 0' "API3b reject creates no journal entries"
+
+RP_GET_AFTER_REJECT="$(curl --fail-with-body --silent --show-error \
+  "$BASE_URL/api/v1/invoices/$RP_INVOICE_ID" \
+  -H "Authorization: Bearer $TOKEN")"
+assert_json "$RP_GET_AFTER_REJECT" 'data["status"] == "DRAFT" and data["version"] == 2' "API3b rejected invoice persists as DRAFT (GET reflects the DB row, not the reject response label)"
+
+expect_status 403 "API3b only invoice_approver/cfo can reject" \
+  -X POST "$BASE_URL/api/v1/invoices/$RP_INVOICE_ID/approve" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Idempotency-Key: $(new_uuid)" \
+  -H "If-Match: 2" \
+  -d '{"action": "REJECT", "rejection_reason": "creator cannot reject"}'
+
+# Patch: creator fixes the DRAFT invoice, totals/FX recalculated, rejection_reason cleared.
+RP_PATCH_RESPONSE="$(curl --fail-with-body --silent --show-error -X PATCH "$BASE_URL/api/v1/invoices/$RP_INVOICE_ID" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Idempotency-Key: $RP_PATCH_KEY" \
+  -H "If-Match: 2" \
+  -d '{
+    "line_items": [
+      {
+        "description": "Safety Valves",
+        "quantity": 10,
+        "unit_price": 5000,
+        "tax_rate": 18,
+        "tax_jurisdiction": "KA"
+      }
+    ]
+  }')"
+pretty_print "$RP_PATCH_RESPONSE"
+assert_json "$RP_PATCH_RESPONSE" 'data["status"] == "DRAFT" and data["version"] == 3' "API3b patch recorrects the DRAFT invoice"
+assert_json "$RP_PATCH_RESPONSE" 'data["line_items"][0]["tax_jurisdiction"] == "KA"' "API3b patch replaces line items"
+assert_json "$RP_PATCH_RESPONSE" '"rejection_reason" not in data or data.get("rejection_reason") is None' "API3b patch clears rejection_reason"
+
+expect_status 403 "API3b only invoice_creator can patch" \
+  -X PATCH "$BASE_URL/api/v1/invoices/$RP_INVOICE_ID" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: $(new_uuid)" \
+  -H "If-Match: 3" \
+  -d '{"po_reference": "should-not-apply"}'
+
+# Re-approve: plain approve proceeds as the normal happy path -- GL entry, delivery queued.
+RP_REAPPROVE_RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/invoices/$RP_INVOICE_ID/approve" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: $RP_REAPPROVE_KEY" \
+  -H "If-Match: 3" \
+  -d '{"notes": "Re-approved after correction"}')"
+pretty_print "$RP_REAPPROVE_RESPONSE"
+assert_json "$RP_REAPPROVE_RESPONSE" 'data["status"] == "APPROVED" and data["version"] == 4 and data["journal_entry_id"] is not None' "API3b re-approve posts GL entry after correction"
+
+RP_JOURNAL_AFTER_REAPPROVE="$(curl --fail-with-body --silent --show-error \
+  "$BASE_URL/api/v1/journal-entries?invoice=$RP_INVOICE_ID" \
+  -H "Authorization: Bearer $TOKEN")"
+assert_json "$RP_JOURNAL_AFTER_REAPPROVE" 'len(data["journal_entries"]) == 1' "API3b re-approve posts exactly one journal entry (the rejected attempt posted none)"
+
+# PATCH is DRAFT-only: it must be refused once the invoice is APPROVED.
+expect_status 422 "API3b patch refused once invoice leaves DRAFT" \
+  -X PATCH "$BASE_URL/api/v1/invoices/$RP_INVOICE_ID" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Idempotency-Key: $(new_uuid)" \
+  -H "If-Match: 4" \
+  -d '{"po_reference": "too-late"}'
+
+# A second reject with the same idempotency key + payload replays the cached
+# response rather than re-processing (the invoice is no longer DRAFT).
+RP_REJECT_REPLAY="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/invoices/$RP_INVOICE_ID/approve" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: $RP_REJECT_KEY" \
+  -H "If-Match: 1" \
+  -d '{"action": "REJECT", "rejection_reason": "Wrong tax jurisdiction -- should be KA not MH"}')"
+assert_json "$RP_REJECT_REPLAY" 'data["version"] == 2' "API3b idempotency key replay returns the original cached reject response"
+
+# Cleanup: settle this control invoice to zero so it does not perturb the
+# shared customer's deterministic aging total for any later assertions.
+RP_SETTLE_RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "$BASE_URL/api/v1/payments" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PRIYA_TOKEN" \
+  -H "X-Idempotency-Key: $RP_PAYMENT_KEY" \
+  -d '{
+    "customer_id": "00000000-0000-0000-0000-000000000005",
+    "payment_reference": "'"$RP_PAYMENT_REFERENCE"'",
+    "payment_date": "2026-07-19",
+    "amount": 59000,
+    "currency": "INR",
+    "payment_method": "NEFT",
+    "allocation_mode": "MANUAL",
+    "allocations": [{"invoice_id": "'"$RP_INVOICE_ID"'", "amount": 59000}]
+  }')"
+assert_json "$RP_SETTLE_RESPONSE" 'data["status"] == "APPLIED"' "API3b cleanup: control invoice settled to zero balance"
+
 echo "=== Control tests ==="
 expect_status 404 "cross-tenant invoice access is concealed" \
   "$BASE_URL/api/v1/invoices/$INVOICE_ID" \
