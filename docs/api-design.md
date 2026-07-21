@@ -555,6 +555,186 @@ approval and journal remain financial truth throughout an adapter outage.
 
 ---
 
+
+
+---
+
+## API2b — PATCH /invoices/{id}
+
+Edit a DRAFT invoice. The only valid status for editing is DRAFT — covers both newly created invoices and invoices returned to DRAFT after rejection.
+
+**Required role:** `invoice_creator`
+**Headers:** `Authorization`, `X-Idempotency-Key`, `If-Match` (current version), `Content-Type`
+
+### When to use
+
+| Scenario | Action |
+|----------|--------|
+| Approver rejects with reason | Invoice reverts to DRAFT — creator fixes and resubmits |
+| Creator catches error before approval | Edit in place |
+| Approved / Sent / Paid invoice | NOT allowed — use void or credit memo |
+
+### Request
+
+```
+PATCH /api/v1/invoices/uuid-1001
+Authorization: Bearer <jwt>
+X-Idempotency-Key: uuid
+If-Match: 1
+Content-Type: application/json
+```
+
+```json
+{
+  "invoice_date": "2026-07-22",
+  "payment_terms": "NET30",
+  "po_reference": "PO-9988",
+  "line_items": [
+    {"description": "Safety Valves", "quantity": 12, "unit_price": 10000, "tax_rate": 18}
+  ]
+}
+```
+
+All fields are optional. Omit a field to leave it unchanged. If `line_items` is provided, existing line items are fully replaced.
+
+### Atomic Operations (ONE DB transaction)
+
+```
+1.  Check idempotency key
+2.  Fetch invoice — verify tenant + entity ownership
+3.  Validate If-Match version
+4.  Validate status == DRAFT
+5.  Apply non-null fields
+6.  If line_items provided: DELETE existing, INSERT new
+7.  Recalculate subtotal, tax, total, balance
+8.  Re-resolve FX rate if currency or invoice_date changed
+9.  Credit limit re-checked (excluding this invoice's own balance)
+10. Clear rejection_reason (set to null)
+11. Atomic UPDATE: version = version + 1
+12. Complete idempotency key
+13. Commit
+```
+
+### Response — HTTP 200 OK
+
+```json
+{
+  "id": "uuid-1001",
+  "status": "DRAFT",
+  "version": 3,
+  "invoice_date": "2026-07-22",
+  "payment_terms": "NET30",
+  "po_reference": "PO-9988",
+  "total_amount": "141600.00",
+  "balance_amount": "141600.00",
+  "line_items": [...]
+}
+```
+
+### Error Cases
+
+```
+403  role is not invoice_creator
+404  invoice not found
+409  If-Match version mismatch
+409  IDEMPOTENCY_KEY_REUSED
+422  status != DRAFT (APPROVED / SENT / PAID etc.)
+422  credit limit would be exceeded after edit
+503  FX_RATE_UNAVAILABLE (if currency changed and no fresh rate)
+```
+
+### Key Invariant
+
+Payments are never allowed on DRAFT invoices. Since PATCH only works on DRAFT, `balance_amount` is always reset to the new `total_amount` — there is no partial balance to preserve.
+
+---
+
+
+
+---
+
+## API3b — Reject flow (action: REJECT in POST /invoices/{id}/approve)
+
+Rejection is not a separate endpoint — it is the `action: REJECT` branch of `POST /invoices/{id}/approve`. Same role, same guards, different outcome.
+
+**Required role:** `invoice_approver` or `cfo`
+**SOX requirement:** rejector must differ from creator (same as approve)
+
+### Request
+
+```
+POST /api/v1/invoices/uuid-1001/approve
+Authorization: Bearer <jwt>   -- Priya's token
+X-Idempotency-Key: uuid
+If-Match: 1
+Content-Type: application/json
+```
+
+```json
+{
+  "action": "REJECT",
+  "rejection_reason": "Tax rate incorrect — should be 12% not 18% for this category"
+}
+```
+
+`action` defaults to `APPROVE` — existing callers are unaffected. `rejection_reason` is required when `action == REJECT`.
+
+### Atomic Operations (ONE DB transaction)
+
+```
+1.  Check idempotency key
+2.  Validate If-Match version
+3.  Validate status == DRAFT
+4.  Check SOX: rejector_id != created_by
+5.  Atomic UPDATE:
+      status           = DRAFT  (stays Draft — creator must fix and resubmit)
+      rejection_reason = <reason from payload>
+      version          = version + 1
+6.  NO GL journal entry — nothing was posted
+7.  NO outbox delivery event — invoice not sent
+8.  Complete idempotency key
+9.  Commit
+```
+
+### Response — HTTP 200 OK
+
+```json
+{
+  "id": "uuid-1001",
+  "status": "DRAFT",
+  "version": 2,
+  "action": "REJECT",
+  "rejected_by": "priya-uuid",
+  "rejected_at": "2026-07-22T10:00:00Z",
+  "rejection_reason": "Tax rate incorrect — should be 12% not 18% for this category"
+}
+```
+
+### Error Cases
+
+```
+400  action == REJECT but rejection_reason is missing or blank
+403  user lacks invoice_approver role
+403  rejector same as creator (SOX violation)
+404  invoice not found
+409  If-Match version mismatch
+422  invoice not in DRAFT status
+```
+
+### Lifecycle after rejection
+
+```
+DRAFT (created by Rahul)
+  -> POST /approve {action: REJECT, rejection_reason: ...}   -- Priya rejects
+DRAFT (rejection_reason set, version incremented)
+  -> PATCH /invoices/{id}   {line_items: [...]}               -- Rahul fixes
+DRAFT (rejection_reason cleared, version incremented)
+  -> POST /approve {action: APPROVE}                          -- Priya approves
+APPROVED -> SENT -> (payments) -> PAID
+```
+
+---
+
 ## API4 ?" POST /payments
 
 [View API4 happy-path flow](flows/api4_post_payments_flow.svg)
