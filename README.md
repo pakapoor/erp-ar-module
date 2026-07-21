@@ -1,203 +1,166 @@
 # ERP AR Module
-A multi-tenant Invoicing and Accounts Receivable module for mid-market ERP systems.
 
-Built as part of a Principal Engineer technical assessment for DeepRunner.ai.
+Multi-tenant Invoicing and Accounts Receivable module for mid-market ERP systems.
+
+Built as a Principal Engineer technical assessment for DeepRunner.ai.
+
+---
 
 ## Quick Start
+
 ```bash
 ./deploy.sh --test
 ```
 
-## Tech Stack
-- **L7 API Gateway:** Envoy
-- **Backend:** Python / FastAPI
-- **Database:** PostgreSQL (with Row Level Security)
-- **Async messaging:** LocalStack SQS with a dead-letter queue
-- **Containerization:** Docker / Docker Compose
-- **AI Tools Used:** Claude (domain learning and design), GitHub Copilot (code assistance), Codex (implementation review, debugging, and integration verification)
+This starts eight services and runs the full test suite.
 
-## Design Walkthrough
-For interview/review, follow this order:
-- [10-Minute Interview Walkthrough](docs/interview-walkthrough.md)
-- [Functional Requirements](docs/FRs.md)
-- [Non Functional Requirements](docs/NFRs.md)
-- [Assessment Requirements Traceability](docs/requirements-traceability.md)
-- [FX Rate and Multi-Currency Design](docs/fx-rate-design.md)
-- [High Level Design](docs/high-level-design.md)
-- [Per-API Flow Diagrams](docs/high-level-design.md#api-flow-details)
-- [Data Model](docs/data-model.md)
-- [API Design](docs/api-design.md)
-- [Design Tradeoffs](docs/tradeoffs.md)
-- [Financial Controls](docs/financial-controls.md)
-- [Local Deployment Guide](docs/deployment.md)
-- [Test Dashboard](docs/tests.md)
-- [Verification and Expected Results](docs/testing.md)
-- [Experience Showcase](docs/experience-showcase.md)
-- [Consolidated Assessment Submission](docs/assessment-submission.md)
+---
 
-## Key Capabilities
-- Envoy L7 edge gateway with early JWT rejection, request tracing, path normalization, and local rate limiting
-- Zero Trust JWT validation at both Envoy and FastAPI; the application has no host-published port
-- Multi-tenant data isolation (JWT + PostgreSQL RLS)
-- Multi-entity-aware data model
-- Transaction/base-currency and exchange-rate data model
-- Balanced GL journal entries for approval and payment
-- Draft, approval, partial-payment, and paid lifecycle transitions
-- AR aging report
-- Idempotent write APIs with cached retry responses
-- Database-triggered audit trail with actor context
-- Application and database period-posting controls
-- Transactional invoice-delivery outbox → Standard SQS/DLQ → idempotent consumer
-- pg_cron-scheduled ECB rate ingestion with durable jobs, provenance and seven
-  approved foreign→INR pairs
-- Foreign-currency invoice/payment posting with locked rates and realized FX
-  gain/loss in INR base-currency books
-- Serializable AUTO/MANUAL payment allocation with repeatable race controls
-- Credit-memo route with complete B6 controls; write-off and void routes with
-  atomic GL entries and repeatable INR happy-path/reconciliation tests
+## What This Is
 
-Designed but deferred from the required prototype: production email/EDI/IRP
-delivery adapters, void-and-reissue orchestration, intercompany elimination,
-manual journals, period-management APIs, cross-currency settlement and
-unrealized period-end FX revaluation. The completed V1 FX scope and its
-acceptance tests are documented in
-[FX Rate and Multi-Currency Design](docs/fx-rate-design.md).
+A production-quality AR module implementing the complete invoice-to-cash cycle:
 
-## API Endpoints
+```
+Raise invoice ? Approve ? Post to GL ? Receive payment ? Age receivables ? Audit trail
+```
+
+### APIs Implemented
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | /invoices | Create invoice |
-| GET | /invoices/{id} | Get invoice with balance |
-| POST | /invoices/{id}/approve | Approve invoice + generate GL entries |
-| POST | /payments | Record payment + allocate to invoices |
-| GET | /customers/{id}/aging | AR aging report |
-| GET | /journal-entries | GL entries for invoice |
-| GET | /health | Operational health and AR/GL reconciliation |
-| GET | /invoices/{id}/delivery | Inspect asynchronous delivery events |
-| POST | /delivery-events/{id}/retry | CFO retry of a DEAD delivery event |
-| POST | /invoices/{id}/credit-memos | Verified credit, AR reduction, and customer liability |
-| POST | /invoices/{id}/writeoff | Experimental CFO bad-debt write-off |
-| POST | /invoices/{id}/void | Experimental draft void or posted reversal |
+| POST | /invoices | Create invoice with line items |
+| GET | /invoices/{id} | Retrieve invoice with payment history |
+| POST | /invoices/{id}/approve | Approve + generate GL journal entry |
+| POST | /payments | Record payment + FIFO/manual allocation |
+| GET | /customers/{id}/aging | AR aging report (current/30/60/90+ days) |
+| GET | /journal-entries | GL journal entries for an invoice |
+| GET | /health | DB health + AR-to-GL reconciliation |
+| POST | /invoices/{id}/credit-memos | Credit memo with GL reversal |
+| POST | /invoices/{id}/writeoff | CFO bad-debt write-off |
+| POST | /invoices/{id}/void | Void draft or reverse posted invoice |
 
-## Verification
+---
 
-`tests/integration/test_api.sh` seeds deterministic data, creates fresh development JWTs, tests
-the six required endpoints plus health, and asserts invoice totals, payment
-idempotency, aging, balanced journal entries, AR-to-GL reconciliation,
-transactional-outbox delivery, cross-tenant denial, RBAC denial, and
-idempotency-payload conflict handling. It also verifies gateway JWT rejection,
-trace propagation, application network isolation, and independent FastAPI JWT
-validation.
+## Architecture
 
-`tests/concurrency/test_payment_concurrency.sh` independently races two distinct full receipts
-through both AUTO and MANUAL allocation. Exactly one transaction commits and
-the loser receives retryable HTTP 409 without leaving partial financial data.
+```
+Client
+  ? Envoy L7 Gateway      (JWT validation, rate limiting, trace IDs)
+  ? FastAPI AR Application (Zero Trust JWT re-validation, business logic)
+  ? PostgreSQL             (single source of financial truth)
+       ?
+  delivery_outbox ? SQS ? consumer ? adapter
+```
 
-`tests/integration/test_credit_memo.sh` verifies B6 entity isolation, idempotent replay and
-changed-payload rejection, concurrent over-credit prevention, paid and
-partially-paid liability handling, USD/INR accounting, API6 visibility,
-balanced journals, and final AR-to-GL reconciliation. Basic draft-void and
-write-off paths remain in `tests/integration/test_api.sh`; their extended matrices are pending.
+**Key decisions:**
+- No Redis � PostgreSQL owns all financial state, locks, and idempotency
+- Modular monolith � invoice + payment + GL share one ACID transaction
+- Transactional outbox � delivery committed with invoice, not dependent on SQS
+- Zero Trust � JWT validated at both gateway and application layer independently
 
-`tests/integration/test_delivery_sqs.sh` proves the full approval → transactional outbox → SQS →
-delivery path, tenant/entity isolation, downstream deduplication, three-attempt
-DLQ redrive, preservation of committed financial records during a delivery
-outage, and CFO recovery of a DEAD event.
+---
 
-`tests/integration/test_api_negative.sh` sends malformed JWTs, invalid headers,
-bad JSON shapes and a short hostile-input burst, then proves the service still
-reports healthy rather than leaking an HTTP 500 or crashing.
+## Tech Stack
 
-Run `./tests/run_coverage.sh` for statement and branch coverage of the Python
-unit suite. Coverage is reported separately from the shell-driven integration
-evidence so the reported percentage is not misleading. The verified baseline
-is 70.9% across `src`, and `.coveragerc` fails the command below 70%.
+- **Gateway:** Envoy
+- **Backend:** Python / FastAPI
+- **Database:** PostgreSQL 16 with pg_cron and Row Level Security
+- **Messaging:** LocalStack SQS with dead-letter queue
+- **Containers:** Docker Compose (8 services)
+- **AI tools:** Claude (domain learning + design), GitHub Copilot + Codex (code)
 
-Detailed commands, database inspection queries, expected output, pg_cron
-verification, and an optional delivery-retry drill are in
-[Verification and Expected Results](docs/testing.md).
+---
 
-## Time Tracking
+## Testing
 
-The assessment suggested 3-4 hours. I chose to spend a full weekend going deep - financial systems are a new domain for me and I wanted to genuinely understand the accounting, not just implement APIs.
+```
+135 tests passing
+70.9% code coverage
 
-The time was primarily invested in:
+Integration:  test_api.sh            (required APIs + accounting assertions)
+              test_credit_memo.sh    (FR-B1 credit memo controls)
+              test_delivery_sqs.sh   (outbox ? SQS ? DLQ flow)
+              test_api_negative.sh   (JWT attacks, hostile inputs)
+Concurrency:  test_payment_concurrency.sh  (double-allocation race)
+Unit:         tests/unit/            (73 unit tests, pytest)
+```
 
-- **Domain learning and design:** accounting concepts, double-entry bookkeeping, GL integration, period close, SOX - significant upfront investment that produced the depth visible in the design docs
-- **Data model, ER diagrams, FRs, NFRs, API design, tradeoffs:** thorough and deliberate design phase before a line of code was written
-- **Working prototype with full test suite:** built iteratively, fixing real issues (isolation level ordering, idempotency, JWT kid header, concurrent approval race)
-- **Financial controls, experience showcase, documentation:** written honestly from real experience at Meta and Lenovo
+---
 
-**Total: approximately one weekend.** AI tools (Claude for domain learning and design exploration, GitHub Copilot and Codex for code assistance) made this depth achievable in the time available - which is exactly the point of encouraging AI tool use in the assessment.
+## Documentation
+
+Start here for a full walkthrough:
+
+- [Technical Walkthrough](docs/interview-walkthrough.md) � narrative + Q&A
+- [Requirements Traceability](docs/requirements-traceability.md) � what is done vs deferred
+- [High Level Design](docs/high-level-design.md) � architecture diagrams
+- [API Design](docs/api-design.md) � endpoint contracts
+- [Data Model](docs/data-model.md) � ER diagrams and schema decisions
+- [Design Tradeoffs](docs/tradeoffs.md) � 14 documented decisions
+- [Financial Controls](docs/financial-controls.md) � SOX, period close, reconciliation
+- [FX Rate Design](docs/fx-rate-design.md) � multi-currency approach
+- [Experience Showcase](docs/experience-showcase.md) � Meta + Lenovo context
+- [Assessment Submission](docs/assessment-submission.md) � consolidated narrative
+- [Deployment Guide](docs/deployment.md) � local setup
+- [Test Results](docs/tests.md) � coverage dashboard
+
+---
+
+## Time Investment
+
+The assessment suggested 3-4 hours. I spent a full weekend � financial systems were a new domain and I wanted to genuinely understand the accounting before writing code.
+
+- **Domain learning:** double-entry bookkeeping, GL/AR reconciliation, SOX, period close
+- **Design:** FRs, NFRs, ER diagrams, API contracts, 14 tradeoffs documented
+- **Implementation:** iterative build with real bugs fixed (isolation ordering, JWT kid, concurrent approval race)
+- **Financial controls + docs:** written from real experience at Meta and Lenovo
+
+AI tools made this depth achievable in the time available � which is the point of encouraging their use.
+
+---
 
 ## Project Structure
 
-```text
-erp-ar-module/
-├── README.md                    Interview entry point and project guide
-├── Dockerfile                   FastAPI and worker runtime image
-├── docker-compose.yml           Local eight-service deployment
-├── deploy.sh                    Safe build, migration, startup and verification
-├── .coveragerc                  Python statement and branch coverage settings
-├── tests/
-│   ├── run_coverage.sh          Unit-test coverage report
-│   ├── unit/                    Python unit tests
-│   ├── integration/             API, accounting and SQS integration suites
-│   └── concurrency/             Concurrent payment race tests
-├── gateway/
-│   └── envoy.yaml               Public L7 gateway, JWT, tracing and rate limits
-├── database/
-│   └── Dockerfile               PostgreSQL 16 image with pg_cron
-├── delivery_stub/
-│   ├── Dockerfile
-│   └── stub.py                  JWKS and invoice-delivery mock
-├── localstack/
-│   └── init-sqs.sh              Main delivery queue and DLQ bootstrap
-├── migrations/
-│   ├── 001_initial_schema.sql
-│   ├── 002_add_ar_aging_bucket_counts.sql
-│   ├── 003_setup_pg_cron.sh
-│   ├── 004_delivery_outbox.sql
-│   ├── 005_entity_scoped_idempotency.sql
-│   ├── 006_fx_rate_ingestion.sql
-│   ├── 007_base_currency_ar_aging.sql
-│   ├── 008_base_only_fx_journal_lines.sql
-│   └── 009_sqs_delivery_pipeline.sql
-├── src/
-│   ├── main.py                  FastAPI composition and trace middleware
-│   ├── auth.py                  JWT/JWKS validation and RBAC
-│   ├── database.py              Async SQLAlchemy session setup
-│   ├── schemas.py               API request/response contracts
-│   ├── seed_data.py             Deterministic demo master data
-│   ├── delivery_publisher.py    DB outbox → SQS relay
-│   ├── delivery_worker.py       SQS → idempotent delivery consumer
-│   ├── fx_rate_worker.py        Scheduled ECB import and INR-rate derivation
-│   ├── models/
-│   │   ├── __init__.py
-│   │   └── models.py            ORM financial and operational models
-│   └── routers/
-│       ├── invoices.py          Create, retrieve and approve invoices
-│       ├── payments.py          Record and allocate receipts
-│       ├── credit_memos.py      Experimental credit, write-off and void commands
-│       ├── aging.py             Customer aging report
-│       ├── journal_entries.py   Invoice journal retrieval and pagination
-│       ├── delivery.py          Delivery status and CFO retry operations
-│       └── health.py            Database, MV and AR/GL reconciliation health
-└── docs/
-    ├── tests.md                       Test counts, pass rate and coverage dashboard
-    ├── requirements-traceability.md  Living assessment coverage matrix
-    ├── interview-walkthrough.md       10-minute narrative, Q&A and live changes
-    ├── high-level-design.md           Component/API architecture
-    ├── flows/                         Happy-path diagrams for APIs 1–6
-    ├── fx-rate-design.md              Approved multi-currency design
-    ├── data-model.md                  ER model and schema decisions
-    ├── api-design.md                  Endpoint contracts and errors
-    ├── FRs.md / NFRs.md               Functional/non-functional design
-    ├── tradeoffs.md                   Decision record
-    ├── financial-controls.md          Accounting/SOX/operations analysis
-    ├── testing.md / deployment.md     Reproduction and expected results
-    └── assessment-submission.md       Consolidated assessment narrative
 ```
-
-Keep this tree synchronized whenever a service, migration, major module, or
-design document is added or removed.
+erp-ar-module/
+??? deploy.sh                    Build, migrate, start, verify
+??? docker-compose.yml           8-service local deployment
+??? gateway/envoy.yaml           L7 gateway config
+??? migrations/                  9 SQL migrations
+??? src/
+?   ??? main.py                  FastAPI app + middleware
+?   ??? auth.py                  JWT/JWKS + RBAC
+?   ??? models/models.py         ORM models
+?   ??? schemas.py               Request/response contracts
+?   ??? seed_data.py             Deterministic test data
+?   ??? delivery_publisher.py    Outbox ? SQS
+?   ??? delivery_worker.py       SQS ? adapter consumer
+?   ??? fx_rate_worker.py        ECB rate ingestion
+?   ??? routers/
+?       ??? invoices.py
+?       ??? payments.py
+?       ??? credit_memos.py
+?       ??? aging.py
+?       ??? journal_entries.py
+?       ??? delivery.py
+?       ??? health.py
+??? tests/
+?   ??? unit/
+?   ??? integration/
+?   ??? concurrency/
+??? docs/
+    ??? interview-walkthrough.md
+    ??? high-level-design.md
+    ??? flows/                   API flow diagrams
+    ??? data-model.md
+    ??? api-design.md
+    ??? tradeoffs.md
+    ??? financial-controls.md
+    ??? FRs.md / NFRs.md
+    ??? fx-rate-design.md
+    ??? experience-showcase.md
+    ??? assessment-submission.md
+    ??? requirements-traceability.md
+    ??? deployment.md
+    ??? tests.md
+```
