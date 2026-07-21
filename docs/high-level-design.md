@@ -1,4 +1,4 @@
-# High-Level Design â€” ERP AR Module
+# High-Level Design â€" ERP AR Module
 
 ## Table of Contents
 - [Overview](#overview)
@@ -11,18 +11,18 @@
 
 ## Overview
 
-Modular monolith architecture for prototype. All components run in Docker on a single host. PostgreSQL is the single source of truth â€” no Redis, no external cache. Zero Trust security â€” JWT validated at both gateway and application layer.
+Modular monolith architecture for prototype. All components run in Docker on a single host. PostgreSQL is the single source of truth â€" no Redis, no external cache. Zero Trust security â€" JWT validated at both gateway and application layer.
 
 Core request flow:
-Client â†’ Envoy L7 Gateway (:8000) â†’ AR Application (FastAPI, internal :8080) â†’ PostgreSQL
+Client â†' Envoy L7 Gateway (:8000) â†' AR Application (FastAPI, internal :8080) â†' PostgreSQL
 
 Asynchronous delivery flow:
-AR approval transaction â†’ PostgreSQL delivery_outbox â†’ Outbox Publisher â†’
-Standard SQS â†’ Delivery Consumer â†’ Delivery Stub. Three failed SQS receives
+AR approval transaction â†' PostgreSQL delivery_outbox â†' Outbox Publisher â†'
+Standard SQS â†' Delivery Consumer â†' Delivery Stub. Three failed SQS receives
 redrive the message to a DLQ.
 
 FX ingestion flow:
-pg_cron â†’ fx_import_job â†’ FX Rate Worker â†’ ECB Data API â†’ exchange_rate
+pg_cron â†' fx_import_job â†' FX Rate Worker â†' ECB Data API â†' exchange_rate
 
 Key decisions:
 - Envoy L7 Gateway: validates JWT signature/expiry/key ID, normalizes paths,
@@ -51,17 +51,17 @@ Key decisions:
 ![High-level design](hld.svg)
 
 API flows shown in diagram:
-- â‘  POST /invoices â€” invoice creation (FR1)
-- â‘¡ GET /invoices/{id} â€” invoice retrieval (FR1)
-- â‘¢ POST /invoices/{id}/approve â€” invoice approval + GL entries (FR2)
-- â‘£ POST /payments â€” payment recording + allocation (FR4)
-- â‘¤ GET /customers/{id}/aging â€” AR aging report (FR8)
-- â‘¥ GET /journal-entries â€” GL journal entries (FR9)
-- â‘¦ GET /health â€” operational health check (NFR5)
+- â'  POST /invoices â€" invoice creation (FR1)
+- â'¡ GET /invoices/{id} â€" invoice retrieval (FR1)
+- â'¢ POST /invoices/{id}/approve â€" invoice approval + GL entries (FR2)
+- â'£ POST /payments â€" payment recording + allocation (FR4)
+- â'¤ GET /customers/{id}/aging â€" AR aging report (FR8)
+- â'¥ GET /journal-entries â€" GL journal entries (FR9)
+- â'¦ GET /health â€" operational health check (NFR5)
 - Bonus lifecycle commands (not shown): credit memo, write-off and void
 
-â‘  â‘¡ â‘¢ â‘£ â‘¤ â‘¥ = business APIs (FRs)
-â‘¦ = operational API (NFR5)
+â'  â'¡ â'¢ â'£ â'¤ â'¥ = business APIs (FRs)
+â'¦ = operational API (NFR5)
 
 ---
 
@@ -91,7 +91,7 @@ These diagrams show the happy path and the main consistency boundary. Exact
 request/response fields and error contracts remain authoritative in
 [API Design](api-design.md).
 
-### â‘  POST /invoices (FR1)
+### â'  POST /invoices (FR1)
 
 ![API1 invoice creation flow](flows/api1_post_invoices_flow.svg)
 
@@ -105,19 +105,19 @@ request/response fields and error contracts remain authoritative in
 - Audit trigger fires automatically (DB level)
 - Result: 201 Created, status=DRAFT, version=1
 
-### â‘¡ GET /invoices/{id} (FR1)
+### â'¡ GET /invoices/{id} (FR1)
 
 ![API2 invoice retrieval flow](flows/api2_get_invoice_flow.svg)
 
 - Required role: any authenticated user of same entity
 - No idempotency key (read only)
 - Live JOIN across: invoice, line_item, payment, payment_allocation, credit_memo, audit_log
-- Always fresh â€” staleness not acceptable for invoice detail
+- Always fresh â€" staleness not acceptable for invoice detail
 - ETag header = version number (used as If-Match on subsequent writes)
 - No audit log written (reads not audited)
 - Result: 200 + payment history + credit memo history + status history
 
-### â‘¢ POST /invoices/{id}/approve (FR2, FR12, FR13)
+### â'¢ POST /invoices/{id}/approve (FR2, FR12, FR13)
 
 ![API3 invoice approval flow](flows/api3_approve_invoice_flow.svg)
 
@@ -140,13 +140,13 @@ request/response fields and error contracts remain authoritative in
 - Audit trigger fires automatically
 - Result: 200, status=APPROVED, version+1, journal_entry_id, delivery_status=QUEUED
 
-### â‘£ POST /payments (FR4, FR11)
+### â'£ POST /payments (FR4, FR11)
 
 ![API4 payment allocation flow](flows/api4_post_payments_flow.svg)
 
 - Required role: payment_recorder or cfo
 - X-Idempotency-Key required
-- Serializable isolation level (strictest) â€” prevents double allocation
+- Serializable isolation level (strictest) â€" prevents double allocation
 - Allocation modes: AUTO (FIFO oldest first) or MANUAL (client specifies)
 - V1 foreign-currency allocation requires payment and invoices to use the same
   transaction currency; Cash uses the payment-date rate, AR uses each locked
@@ -161,7 +161,7 @@ request/response fields and error contracts remain authoritative in
 - Defence in depth: idempotency key + UNIQUE(tenant_id, customer_id, payment_reference)
 - Result: 201 + allocations + journal_entry_id
 
-### â‘¤ GET /customers/{id}/aging (FR8)
+### â'¤ GET /customers/{id}/aging (FR8)
 
 ![API5 aging and API6 journal retrieval flows](flows/api5_api6_flows.svg)
 
@@ -169,31 +169,31 @@ request/response fields and error contracts remain authoritative in
 - Reads from ar_aging materialized view (pre-computed)
 - Sums `base_balance_amount` in entity currency; DRAFT invoices are excluded
   because approval is the event that posts Accounts Receivable
-- 5 minute staleness acceptable â€” collections team reviews once daily
+- 5 minute staleness acceptable â€" collections team reviews once daily
 - as_of timestamp shown in response (explicit staleness)
 - Deployment target: MV refreshed by pg_cron every 5 minutes inside PostgreSQL
 - Integration test also refreshes explicitly for deterministic assertions; live fallback handles a missing MV row
-- No Redis, no external cache â€” consistent with no-Redis decision
+- No Redis, no external cache â€" consistent with no-Redis decision
 - Result: 200 + aging buckets + as_of timestamp
 
-### â‘¥ GET /journal-entries (FR9)
+### â'¥ GET /journal-entries (FR9)
 
 ![API6 journal entries retrieval flow](flows/api6_journal_entries_flow.svg)
 
 - Required role: any authenticated user of the same entity
-- `invoice` query parameter required (SOX â€” must be traceable to source document)
-- Live query â€” journal entries immutable but must never appear missing (SOX!)
+- `invoice` query parameter required (SOX â€" must be traceable to source document)
+- Live query â€" journal entries immutable but must never appear missing (SOX!)
 - Includes approval, allocated-payment, and applied credit-memo journals
 - Returns both transaction-currency and base-currency amounts and verifies each balances
-- Page-based pagination (max 20 rows per invoice â€” cursor not needed)
+- Page-based pagination (max 20 rows per invoice â€" cursor not needed)
 - Indexed on: tenant_id, reference_type + reference_id, entry_date
 - Result: 200 + journal entries + lines + pagination
 
-### â‘¦ GET /health (NFR5)
+### â'¦ GET /health (NFR5)
 
 ![API7 health and reconciliation flow](flows/api7_health_flow.svg)
 
-- No auth required â€” used by Docker, load balancer, DataDog
+- No auth required â€" used by Docker, load balancer, DataDog
 - Shows: DB status, MV age, last reconciliation status
 - Reconciles posted invoice base balances to base-currency AR GL per entity
 - Result: 200 healthy or 503 unhealthy
@@ -206,7 +206,7 @@ request/response fields and error contracts remain authoritative in
   event to PENDING; the application does not call SQS or the delivery adapter.
 - Repeating an active retry is harmless. Retrying a DELIVERED event returns 409.
 
-### Lifecycle corrections (FR5â€“FR7)
+### Lifecycle corrections (FR5â€"FR7)
 
 - `POST /invoices/{id}/credit-memos`: approver/CFO reverses Revenue and
   optional Tax, credits AR, and applies the credit memo atomically.
@@ -235,18 +235,18 @@ request/response fields and error contracts remain authoritative in
 - Envoy L7 Gateway: JWT signature, expiry, and `kid` check (early rejection)
 - AR Application: re-validates JWT independently (Zero Trust)
 - Both fetch public keys from Auth Server JWKS endpoint
-- kid header in JWT â†’ lookup correct public key â†’ verify signature
+- kid header in JWT â†' lookup correct public key â†' verify signature
 - Local demo traffic is HTTP; production terminates TLS at Envoy with managed certificates
 
 ### Observability (NFR5)
 - Envoy overwrites/injects `X-Trace-ID` from its generated request ID
-- Flows through AR App â†’ PostgreSQL â†’ audit_log
+- Flows through AR App â†' PostgreSQL â†' audit_log
 - DataDog APM traces full request lifecycle
 - PagerDuty alerts on: AR/GL mismatch, payment failure > 1%, DB down
 
 ### Scalability (NFR6)
-- AR Application is stateless â†’ horizontal scaling via load balancer
-- No stickiness needed â€” JWT carries all context
+- AR Application is stateless â†' horizontal scaling via load balancer
+- No stickiness needed â€" JWT carries all context
 - PostgreSQL: primary for writes, read replica for reporting (Phase 2)
 - Outbox publishers scale through `SKIP LOCKED`; SQS consumers scale
   independently and tolerate duplicates through durable event IDs

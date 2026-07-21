@@ -1,17 +1,17 @@
-# Non-Functional Requirements ‚Äî ERP AR Module
+# Non-Functional Requirements ‚Ä" ERP AR Module
 
 ## Table of Contents
-- [NFR1 ‚Äî Consistency](#nfr1--consistency)
-- [NFR2 ‚Äî Performance](#nfr2--performance)
-- [NFR3 ‚Äî Availability](#nfr3--availability)
-- [NFR4 ‚Äî Security](#nfr4--security)
-- [NFR5 ‚Äî Observability](#nfr5--observability)
-- [NFR6 ‚Äî Scalability](#nfr6--scalability)
-- [NFR7 ‚Äî Durability](#nfr7--durability)
+- [NFR1 ‚Ä" Consistency](#nfr1--consistency)
+- [NFR2 ‚Ä" Performance](#nfr2--performance)
+- [NFR3 ‚Ä" Availability](#nfr3--availability)
+- [NFR4 ‚Ä" Security](#nfr4--security)
+- [NFR5 ‚Ä" Observability](#nfr5--observability)
+- [NFR6 ‚Ä" Scalability](#nfr6--scalability)
+- [NFR7 ‚Ä" Durability](#nfr7--durability)
 
 ---
 
-## NFR1 ‚Äî Consistency
+## NFR1 ‚Ä" Consistency
 
 System must prioritize consistency over availability (CP in CAP theorem). All financial operations must be ACID compliant. System returns 503 rather than serve stale or incorrect financial data. Isolation levels selected per operation type.
 
@@ -28,21 +28,21 @@ Aging report:         Read Committed    ‚Üê read only, 5 min staleness ok
 Two payments hit simultaneously for same invoice:
 
 Without Serializable:
-Request 1: reads balance 174,000 ‚Üí allocates 174,000
-Request 2: reads balance 174,000 ‚Üí allocates 174,000
-Result: invoice marked paid TWICE ‚Üí audit finding!
+Request 1: reads balance 174,000 ‚Ü' allocates 174,000
+Request 2: reads balance 174,000 ‚Ü' allocates 174,000
+Result: invoice marked paid TWICE ‚Ü' audit finding!
 
 With Serializable:
-Request 1: acquires lock ‚Üí allocates ‚Üí commits
-Request 2: waits ‚Üí PostgreSQL detects its stale serializable snapshot
-         ‚Üí transaction aborts with SQLSTATE 40001
-         ‚Üí API returns retryable 409 PAYMENT_CONCURRENCY_CONFLICT
+Request 1: acquires lock ‚Ü' allocates ‚Ü' commits
+Request 2: waits ‚Ü' PostgreSQL detects its stale serializable snapshot
+         ‚Ü' transaction aborts with SQLSTATE 40001
+         ‚Ü' API returns retryable 409 PAYMENT_CONCURRENCY_CONFLICT
 Result: correct ‚úÖ
 ```
 
 **Implementation:**
 ```python
-# Payment allocation only ‚Äî serializable
+# Payment allocation only ‚Ä" serializable
 with db.transaction(isolation='serializable'):
     balance = get_invoice_balance(invoice_id)
     allocate_payment(payment_id, invoice_id, amount)
@@ -79,9 +79,9 @@ CHECK (status IN ('DRAFT','APPROVED','SENT','PARTIALLY_PAID',
 
 ---
 
-## NFR2 ‚Äî Performance
+## NFR2 ‚Ä" Performance
 
-API response times must meet defined SLAs. Not all operations require same consistency level ‚Äî performance targets set accordingly.
+API response times must meet defined SLAs. Not all operations require same consistency level ‚Ä" performance targets set accordingly.
 
 **Response Time Targets:**
 ```
@@ -93,7 +93,7 @@ AR Aging report:      < 100ms p99  ‚Üê materialized view
 Consolidated report:  < 2000ms p99 ‚Üê complex multi-entity query
 ```
 
-**Aging Report ‚Äî Materialized View Strategy:**
+**Aging Report ‚Ä" Materialized View Strategy:**
 ```sql
 CREATE MATERIALIZED VIEW ar_aging AS
 SELECT
@@ -147,7 +147,7 @@ Aging report:   5 min stale     ‚Üê relaxed, shown explicitly to user
 
 ---
 
-## NFR3 ‚Äî Availability
+## NFR3 ‚Ä" Availability
 
 System must achieve 99.9% uptime. Zero downtime deployments during business hours. Maintenance window 2am-4am tenant local timezone. Consistency guaranteed during failures via atomic transactions and idempotency keys.
 
@@ -158,19 +158,19 @@ Maintenance window: 2am-4am tenant timezone
 Annual downtime:    < 8.7 hours
 ```
 
-**Idempotency ‚Äî All Write Operations:**
+**Idempotency ‚Ä" All Write Operations:**
 ```
 POST /invoices
 X-Idempotency-Key: "reliance-create-invoice-20240115-001"
-‚Üí Duplicate submission ‚Üí returns same invoice, no duplicate created
+‚Ü' Duplicate submission ‚Ü' returns same invoice, no duplicate created
 
 POST /invoices/{id}/approve
 X-Idempotency-Key: "reliance-approve-1001-20240115"
-‚Üí Double approval attempt ‚Üí returns same response, GL entry not duplicated
+‚Ü' Double approval attempt ‚Ü' returns same response, GL entry not duplicated
 
 POST /payments
 X-Idempotency-Key: "tata-steel-P001-20240131"
-‚Üí Duplicate payment ‚Üí returns same response, payment not duplicated
+‚Ü' Duplicate payment ‚Ü' returns same response, payment not duplicated
 ```
 
 **Idempotency Implementation:**
@@ -182,18 +182,18 @@ X-Idempotency-Key: "tata-steel-P001-20240131"
 Server:
 Step 0: Canonicalize the request and calculate its SHA-256 request_hash
 Step 1: Check idempotency_key by (tenant_id, entity_id, endpoint, key)
-‚Üí Key COMPLETED + same hash  ‚Üí replay cached HTTP status and body
-‚Üí Key PROCESSING + same hash ‚Üí return 409 REQUEST_IN_PROGRESS
-‚Üí Same key + different hash  ‚Üí return 409 IDEMPOTENCY_KEY_REUSED
-‚Üí Key not found              ‚Üí insert PROCESSING and proceed
+‚Ü' Key COMPLETED + same hash  ‚Ü' replay cached HTTP status and body
+‚Ü' Key PROCESSING + same hash ‚Ü' return 409 REQUEST_IN_PROGRESS
+‚Ü' Same key + different hash  ‚Ü' return 409 IDEMPOTENCY_KEY_REUSED
+‚Ü' Key not found              ‚Ü' insert PROCESSING and proceed
 
 Retry scenario:
-Request 1: key not found ‚Üí process ‚Üí mark COMPLETED
-Request 2: key found + COMPLETED ‚Üí same response ‚úÖ
+Request 1: key not found ‚Ü' process ‚Ü' mark COMPLETED
+Request 2: key found + COMPLETED ‚Ü' same response ‚úÖ
 No duplicate payment! ‚úÖ
 ```
 
-**Atomic Transaction ‚Äî Crash Safety:**
+**Atomic Transaction ‚Ä" Crash Safety:**
 ```
 BEGIN TRANSACTION
   Step 0: Claim unique (tenant_id, entity_id, endpoint, key) with request_hash
@@ -205,10 +205,10 @@ BEGIN TRANSACTION
 COMMIT
 
 Server crashes at Step 4:
-‚Üí ROLLBACK everything ‚úÖ
-‚Üí Clean state ‚úÖ
-‚Üí Client retries safely ‚úÖ
-‚Üí Idempotency key not COMPLETED ‚Üí reprocessed safely ‚úÖ
+‚Ü' ROLLBACK everything ‚úÖ
+‚Ü' Clean state ‚úÖ
+‚Ü' Client retries safely ‚úÖ
+‚Ü' Idempotency key not COMPLETED ‚Ü' reprocessed safely ‚úÖ
 ```
 
 The idempotency claim and financial writes share one transaction. PostgreSQL
@@ -239,7 +239,7 @@ Health checks + auto restart
 
 ---
 
-## NFR4 ‚Äî Security
+## NFR4 ‚Ä" Security
 
 System must protect data in transit and at rest. Access is controlled via RBAC
 (FR14) and tenant isolation (FR10). PII fields are encrypted at column level.
@@ -262,13 +262,13 @@ PII column encryption via AWS KMS:
   - customer.bank_details    ‚Üê payment info
   
 Hybrid encryption:
-  AES ‚Üí encrypts actual data (fast, handles any size)
-  RSA ‚Üí encrypts AES key (via KMS/HSM, tamper-proof)
+  AES ‚Ü' encrypts actual data (fast, handles any size)
+  RSA ‚Ü' encrypts AES key (via KMS/HSM, tamper-proof)
 
-Who can decrypt?
+Who can decrypt‚Ü'
   App service account  ‚úÖ (to serve API requests)
   DBA                  ‚ùå (sees ciphertext only)
-  AWS support          ‚ùå (HSM ‚Äî physically tamper proof)
+  AWS support          ‚ùå (HSM ‚Ä" physically tamper proof)
   Auditor              ‚úÖ (read-only IAM role)
 ```
 
@@ -282,7 +282,7 @@ id        | name       | tax_identifier
 tata-001  | Tata Steel | xK9mP2qR7nL4...  ‚Üê ciphertext!
 
 App decrypts via KMS:
-tax_identifier ‚Üí "29AAACT1234F1Z5"  ‚Üê only app sees plaintext
+tax_identifier ‚Ü' "29AAACT1234F1Z5"  ‚Üê only app sees plaintext
 ```
 
 **Access Control:**
@@ -293,13 +293,13 @@ Root DB credentials in AWS Secrets Manager
 All human access via application layer only
 ```
 
-**Enterprise Tier ‚Äî BYOK:**
+**Enterprise Tier ‚Ä" BYOK:**
 ```
 Bring Your Own Key:
 Tenant generates RSA keypair
 Tenant gives app permission to use public key
 Tenant holds private key
-Tenant can revoke anytime ‚Üí instant data inaccessibility
+Tenant can revoke anytime ‚Ü' instant data inaccessibility
 Full data sovereignty ‚úÖ
 ```
 
@@ -311,7 +311,7 @@ Full data sovereignty ‚úÖ
 
 ---
 
-## NFR5 ‚Äî Observability
+## NFR5 ‚Ä" Observability
 
 System must provide full observability across infrastructure, business, and financial integrity dimensions. OpenTelemetry for instrumentation, DataDog for visualization, PagerDuty for critical alerts.
 
@@ -342,30 +342,30 @@ System must provide full observability across infrastructure, business, and fina
 - Invoices stuck in Draft > 7 days     ‚Üê forgotten invoices!
 - Invoices overdue > 90 days           ‚Üê write-off candidates
 - Unbalanced journal entries           ‚Üê must never happen!
-- Days since period close              ‚Üê is Feb still open in April?
+- Days since period close              ‚Üê is Feb still open in April‚Ü'
 ```
 
-**APM ‚Äî Distributed Tracing:**
+**APM ‚Ä" Distributed Tracing:**
 ```
-POST /payments ‚Üí trace_id: abc123
-  ‚îú‚îÄ‚îÄ JWT validation          2ms
-  ‚îú‚îÄ‚îÄ Idempotency check       5ms
-  ‚îú‚îÄ‚îÄ DB: check balance       10ms
-  ‚îú‚îÄ‚îÄ DB: allocate payment    45ms  ‚Üê slow! investigate
-  ‚îú‚îÄ‚îÄ DB: generate GL entry   8ms
-  ‚îî‚îÄ‚îÄ DB: update status       5ms
+POST /payments ‚Ü' trace_id: abc123
+  ‚"ú‚"Ä‚"Ä JWT validation          2ms
+  ‚"ú‚"Ä‚"Ä Idempotency check       5ms
+  ‚"ú‚"Ä‚"Ä DB: check balance       10ms
+  ‚"ú‚"Ä‚"Ä DB: allocate payment    45ms  ‚Üê slow! investigate
+  ‚"ú‚"Ä‚"Ä DB: generate GL entry   8ms
+  ‚""‚"Ä‚"Ä DB: update status       5ms
 Total: 75ms
 ```
 
 **Alerting Tiers:**
 ```
-RED (PagerDuty ‚Äî immediate page):
+RED (PagerDuty ‚Ä" immediate page):
   - AR/GL mismatch detected
   - Unbalanced journal entry created
   - Payment failure rate > 1%
   - DB primary down
 
-YELLOW (Slack ‚Äî batched summary):
+YELLOW (Slack ‚Ä" batched summary):
   - Invoice stuck in Draft > 7 days
   - Reconciliation not run > 24hrs
   - API p99 > 500ms
@@ -386,11 +386,11 @@ PagerDuty      ‚Üê RED alert escalation
 
 **Lenovo IoT Parallel:**
 ```
-IoT:  Edge ‚Üí Kafka ‚Üí Flink ‚Üí SQS ‚Üí ServiceNow
+IoT:  Edge ‚Ü' Kafka ‚Ü' Flink ‚Ü' SQS ‚Ü' ServiceNow
       Each hop traced with correlation ID
       DataDog + PagerDuty for alerts
 
-ERP:  Envoy L7 Gateway ‚Üí FastAPI (internal network only) ‚Üí PostgreSQL
+ERP:  Envoy L7 Gateway ‚Ü' FastAPI (internal network only) ‚Ü' PostgreSQL
       Each hop traced with trace_id
       Same DataDog + PagerDuty stack ‚úÖ
 ```
@@ -403,15 +403,15 @@ ERP:  Envoy L7 Gateway ‚Üí FastAPI (internal network only) ‚Üí PostgreSQL
 
 ---
 
-## NFR6 ‚Äî Scalability
+## NFR6 ‚Ä" Scalability
 
 System must scale horizontally to support mid-market SaaS workloads. API layer scales independently of database layer. Bulk operations handled asynchronously to avoid timeout.
 
 **Scale Targets:**
 ```
 Tenants:            100+
-Concurrent users:   10,000 (100 tenants √ó 100 users)
-Invoices/month:     1M (100 tenants √ó 10,000 invoices)
+Concurrent users:   10,000 (100 tenants √-- 100 users)
+Invoices/month:     1M (100 tenants √-- 10,000 invoices)
 Payments/day:       50,000
 Bulk invoice import: 1,000 invoices per batch
 Bulk payment import: 10,000 payments per batch
@@ -427,18 +427,18 @@ Add/remove servers without downtime
 
 **Database Scaling:**
 ```
-Primary      ‚Üí all writes
-Read Replica ‚Üí aging reports, consolidated reports
+Primary      ‚Ü' all writes
+Read Replica ‚Ü' aging reports, consolidated reports
 Connection pooling via PgBouncer
 Table partitioning by tenant_id:
 
 invoices partitioned by tenant_id:
-‚îú‚îÄ‚îÄ invoices_reliance
-‚îú‚îÄ‚îÄ invoices_tata
-‚îî‚îÄ‚îÄ invoices_jsw
+‚"ú‚"Ä‚"Ä invoices_reliance
+‚"ú‚"Ä‚"Ä invoices_tata
+‚""‚"Ä‚"Ä invoices_jsw
 ```
 
-**Bulk Operations ‚Äî Async (Invoices):**
+**Bulk Operations ‚Ä" Async (Invoices):**
 ```
 POST /invoices/bulk
 Request:  1,000 invoices
@@ -460,7 +460,7 @@ GET /jobs/bulk-inv-001
 }
 ```
 
-**Bulk Operations ‚Äî Async (Payments):**
+**Bulk Operations ‚Ä" Async (Payments):**
 ```
 POST /payments/bulk
 Request:  10,000 payments
@@ -479,20 +479,20 @@ GET /jobs/bulk-pay-001
 }
 ```
 
-**Example ‚Äî Without vs With Async:**
+**Example ‚Ä" Without vs With Async:**
 ```
 10,000 payments arrive simultaneously:
 
 Without async:
-‚Üí 10,000 requests timeout ‚ùå
-‚Üí Clients retry ‚Üí 20,000 requests üò±
-‚Üí System overload
+‚Ü' 10,000 requests timeout ‚ùå
+‚Ü' Clients retry ‚Ü' 20,000 requests üò±
+‚Ü' System overload
 
 With async bulk + queue:
-‚Üí One bulk request accepted immediately ‚úÖ
-‚Üí Queue processes at safe rate
-‚Üí Client polls job status
-‚Üí No timeouts, no retries needed ‚úÖ
+‚Ü' One bulk request accepted immediately ‚úÖ
+‚Ü' Queue processes at safe rate
+‚Ü' Client polls job status
+‚Ü' No timeouts, no retries needed ‚úÖ
 ```
 
 ### Future Enhancements (Phase 2)
@@ -527,33 +527,33 @@ DB event claim and the adapter deduplicate using the stable outbox event ID.
 Three failed receives redrive to a DLQ. The CFO retry API resets only a DEAD
 event to PENDING, after which the publisher performs the broker call. Production
 adds DLQ-depth/oldest-age alarms, retention/archival, bounded bulk redrive and
-autoscaling on queue age‚Äînot on financial API latency.
+autoscaling on queue age‚Ä"not on financial API latency.
 
 ---
 
-## NFR7 ‚Äî Durability
+## NFR7 ‚Ä" Durability
 
 Financial data must never be lost. 7 year retention for SOX compliance. RTO and RPO defined per criticality. Backups automated and tested regularly.
 
 **Recovery Targets:**
 ```
 RPO (Recovery Point Objective):
-‚Üí Maximum data loss acceptable
-‚Üí Financial system: RPO = 0  (zero data loss!)
-‚Üí Achieved via: synchronous replication to standby
+‚Ü' Maximum data loss acceptable
+‚Ü' Financial system: RPO = 0  (zero data loss!)
+‚Ü' Achieved via: synchronous replication to standby
 
 RTO (Recovery Time Objective):
-‚Üí Maximum downtime acceptable
-‚Üí Financial system: RTO = 30 minutes
-‚Üí Achieved via: automated failover
+‚Ü' Maximum downtime acceptable
+‚Ü' Financial system: RTO = 30 minutes
+‚Ü' Achieved via: automated failover
 ```
 
 **Backup Strategy:**
 ```
-Continuous WAL archival ‚Üí S3 (every transaction!)
-Daily snapshots        ‚Üí S3 (point in time recovery)
-Weekly full backup     ‚Üí S3 Glacier (cheap long term)
-7 year retention       ‚Üí S3 WORM (SOX compliance, immutable)
+Continuous WAL archival ‚Ü' S3 (every transaction!)
+Daily snapshots        ‚Ü' S3 (point in time recovery)
+Weekly full backup     ‚Ü' S3 Glacier (cheap long term)
+7 year retention       ‚Ü' S3 WORM (SOX compliance, immutable)
 ```
 
 **Data Retention Tiers:**
@@ -563,29 +563,29 @@ Warm (6-24 months):  S3 Standard   ‚Üê occasional access
 Cold (2-7 years):    S3 Glacier    ‚Üê compliance archival only
 ```
 
-**Zero Data Loss ‚Äî Journal Entries (3 copies):**
+**Zero Data Loss ‚Ä" Journal Entries (3 copies):**
 ```
-Journal entries ‚Üí Kafka         (durable log, replay capable)
-               ‚Üí PostgreSQL     (queryable, fast access)
-               ‚Üí S3 WORM        (immutable, 7 years, SOX)
+Journal entries ‚Ü' Kafka         (durable log, replay capable)
+               ‚Ü' PostgreSQL     (queryable, fast access)
+               ‚Ü' S3 WORM        (immutable, 7 years, SOX)
 
 Three copies. SOX auditor happy! ‚úÖ
 ```
 
-**Example ‚Äî Crash Recovery:**
+**Example ‚Ä" Crash Recovery:**
 ```
 DB primary crashes at 2:00pm:
 
 RPO = 0:
-‚Üí Standby has ALL transactions via sync replication
-‚Üí Zero data loss ‚úÖ
+‚Ü' Standby has ALL transactions via sync replication
+‚Ü' Zero data loss ‚úÖ
 
 RTO = 30 mins:
-‚Üí Automated failover to standby
-‚Üí DNS updated automatically
-‚Üí App reconnects via connection pooler
-‚Üí Back online by 2:30pm ‚úÖ
-‚Üí Users see brief 503, retry succeeds ‚úÖ
+‚Ü' Automated failover to standby
+‚Ü' DNS updated automatically
+‚Ü' App reconnects via connection pooler
+‚Ü' Back online by 2:30pm ‚úÖ
+‚Ü' Users see brief 503, retry succeeds ‚úÖ
 ```
 
 **99.99% SLA Consideration:**

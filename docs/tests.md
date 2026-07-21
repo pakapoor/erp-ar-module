@@ -1,4 +1,4 @@
-# Test Dashboard â€” ERP AR Module
+# Test Dashboard â€" ERP AR Module
 
 ## Current Result
 
@@ -50,24 +50,24 @@ branches rather than narrowing the coverage scope.
 
 ```text
 tests/
-â”œâ”€â”€ run_coverage.sh
-â”œâ”€â”€ unit/
-â”‚   â”œâ”€â”€ test_auth.py
-â”‚   â”œâ”€â”€ test_endpoints.py
-â”‚   â”œâ”€â”€ test_financial_guards.py
-â”‚   â”œâ”€â”€ test_fx_rate_worker.py
-â”‚   â”œâ”€â”€ test_invoice_fx.py
-â”‚   â”œâ”€â”€ test_router_helpers.py
-â”‚   â”œâ”€â”€ test_seed_and_database.py
-â”‚   â”œâ”€â”€ test_worker_persistence.py
-â”‚   â””â”€â”€ test_workers.py
-â”œâ”€â”€ integration/
-â”‚   â”œâ”€â”€ test_api.sh
-â”‚   â”œâ”€â”€ test_api_negative.sh
-â”‚   â”œâ”€â”€ test_credit_memo.sh
-â”‚   â””â”€â”€ test_delivery_sqs.sh
-â””â”€â”€ concurrency/
-    â””â”€â”€ test_payment_concurrency.sh
+â"œâ"€â"€ run_coverage.sh
+â"œâ"€â"€ unit/
+â"‚   â"œâ"€â"€ test_auth.py
+â"‚   â"œâ"€â"€ test_endpoints.py
+â"‚   â"œâ"€â"€ test_financial_guards.py
+â"‚   â"œâ"€â"€ test_fx_rate_worker.py
+â"‚   â"œâ"€â"€ test_invoice_fx.py
+â"‚   â"œâ"€â"€ test_router_helpers.py
+â"‚   â"œâ"€â"€ test_seed_and_database.py
+â"‚   â"œâ"€â"€ test_worker_persistence.py
+â"‚   â""â"€â"€ test_workers.py
+â"œâ"€â"€ integration/
+â"‚   â"œâ"€â"€ test_api.sh
+â"‚   â"œâ"€â"€ test_api_negative.sh
+â"‚   â"œâ"€â"€ test_credit_memo.sh
+â"‚   â""â"€â"€ test_delivery_sqs.sh
+â""â"€â"€ concurrency/
+    â""â"€â"€ test_payment_concurrency.sh
 ```
 
 ### Unit tests
@@ -82,7 +82,7 @@ are mocked at their boundaries.
 
 | Suite | Assertions | Main purpose |
 |---|---:|---|
-| `tests/integration/test_api.sh` | 62 | API1â€“API7, FX, accounting, idempotency, isolation and reconciliation |
+| `tests/integration/test_api.sh` | 62 | API1â€"API7, FX, accounting, idempotency, isolation and reconciliation |
 | `tests/integration/test_api_negative.sh` | 34 | Malformed JWT/header/body resilience and post-burst health |
 | `tests/concurrency/test_payment_concurrency.sh` | 3 | AUTO/MANUAL payment races and reconciliation |
 | `tests/integration/test_credit_memo.sh` | 17 | Entity, idempotency, concurrency, paid/partial, FX and GL controls |

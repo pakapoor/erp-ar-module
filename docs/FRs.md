@@ -1,28 +1,28 @@
-# Functional Requirements ‚Äî ERP AR Module
+# Functional Requirements ‚Ä" ERP AR Module
 
 ## Table of Contents
-- [FR1 ‚Äî Invoice Creation](#fr1--invoice-creation)
-- [FR2 ‚Äî Invoice Approval](#fr2--invoice-approval)
-- [FR3 ‚Äî Invoice Sending](#fr3--invoice-sending)
-- [FR4 ‚Äî Payment Recording and Allocation](#fr4--payment-recording-and-allocation)
-- [FR5 ‚Äî Credit Memo](#fr5--credit-memo)
-- [FR6 ‚Äî Write-off](#fr6--write-off)
-- [FR7 ‚Äî Invoice Void](#fr7--invoice-void)
-- [FR8 ‚Äî AR Aging Report](#fr8--ar-aging-report)
-- [FR9 ‚Äî GL Journal Entries and Reconciliation](#fr9--gl-journal-entries-and-reconciliation)
-- [FR10 ‚Äî Multi-tenant Isolation](#fr10--multi-tenant-isolation)
-- [FR11 ‚Äî Multi-currency](#fr11--multi-currency)
-- [FR12 ‚Äî Audit Trail](#fr12--audit-trail)
-- [FR13 ‚Äî Accounting Period Enforcement](#fr13--accounting-period-enforcement)
-- [FR14 ‚Äî RBAC and Segregation of Duties](#fr14--rbac-and-segregation-of-duties)
-- [Future-FR1 ‚Äî Intercompany Consolidation](#future-fr1--intercompany-consolidation)
-- [Future-FR2 ‚Äî Manual Journal Entry](#future-fr2--manual-journal-entry)
-- [Future-FR3 ‚Äî Period Management APIs](#future-fr3--period-management-apis)
-- [Future-FR4 ‚Äî User Management APIs](#future-fr4--user-management-apis)
+- [FR1 ‚Ä" Invoice Creation](#fr1--invoice-creation)
+- [FR2 ‚Ä" Invoice Approval](#fr2--invoice-approval)
+- [FR3 ‚Ä" Invoice Sending](#fr3--invoice-sending)
+- [FR4 ‚Ä" Payment Recording and Allocation](#fr4--payment-recording-and-allocation)
+- [FR5 ‚Ä" Credit Memo](#fr5--credit-memo)
+- [FR6 ‚Ä" Write-off](#fr6--write-off)
+- [FR7 ‚Ä" Invoice Void](#fr7--invoice-void)
+- [FR8 ‚Ä" AR Aging Report](#fr8--ar-aging-report)
+- [FR9 ‚Ä" GL Journal Entries and Reconciliation](#fr9--gl-journal-entries-and-reconciliation)
+- [FR10 ‚Ä" Multi-tenant Isolation](#fr10--multi-tenant-isolation)
+- [FR11 ‚Ä" Multi-currency](#fr11--multi-currency)
+- [FR12 ‚Ä" Audit Trail](#fr12--audit-trail)
+- [FR13 ‚Ä" Accounting Period Enforcement](#fr13--accounting-period-enforcement)
+- [FR14 ‚Ä" RBAC and Segregation of Duties](#fr14--rbac-and-segregation-of-duties)
+- [Future-FR1 ‚Ä" Intercompany Consolidation](#future-fr1--intercompany-consolidation)
+- [Future-FR2 ‚Ä" Manual Journal Entry](#future-fr2--manual-journal-entry)
+- [Future-FR3 ‚Ä" Period Management APIs](#future-fr3--period-management-apis)
+- [Future-FR4 ‚Ä" User Management APIs](#future-fr4--user-management-apis)
 
 ---
 
-## FR1 ‚Äî Invoice Creation
+## FR1 ‚Ä" Invoice Creation
 
 System must allow creation of an invoice with sender entity, receiver (customer) details, line items (description, quantity, unit price, tax rate, tax jurisdiction, tax amount, line total), subtotal, total tax, and grand total. Optional PO reference. Currency at invoice level. Each line item supports its own tax rate and tax jurisdiction.
 
@@ -89,14 +89,14 @@ Jan 20 14:00  System  Partially Paid
 
 ---
 
-## FR2 ‚Äî Invoice Approval
+## FR2 ‚Ä" Invoice Approval
 
 An invoice must be approved by an authorized person before it can be sent to the customer. Approval authority depends on invoice amount thresholds. System enforces that creator and approver must be different people (SOX compliance). On approval, GL journal entries are generated automatically. On rejection, invoice returns to Draft with mandatory rejection reason.
 
 **Approval Thresholds:**
-- Invoice < ‚Çπ1,00,000 ‚Üí Accounts Officer can approve
-- Invoice < ‚Çπ10,00,000 ‚Üí Finance Manager can approve
-- Invoice > ‚Çπ10,00,000 ‚Üí CFO must approve
+- Invoice < ‚Çπ1,00,000 ‚Ü' Accounts Officer can approve
+- Invoice < ‚Çπ10,00,000 ‚Ü' Finance Manager can approve
+- Invoice > ‚Çπ10,00,000 ‚Ü' CFO must approve
 
 ```
 POST /invoices/{id}/approve
@@ -110,30 +110,30 @@ Step 1: Rahul (Accounts Officer) creates invoice
 
 Step 2: Rahul submits for approval
         Amount ‚Çπ1,74,000 < ‚Çπ10,00,000
-        ‚Üí Auto-routed to Priya (Finance Manager)
+        ‚Ü' Auto-routed to Priya (Finance Manager)
         Status: Draft (is_submitted: true)
 
 Step 3: Priya rejects ‚ùå
-        Reason: "Line 2 Safety Valves ‚Äî interstate supply
+        Reason: "Line 2 Safety Valves ‚Ä" interstate supply
         must use IGST not CGST+SGST"
         Status: Draft (is_submitted: false)
 
 Step 4: Rahul fixes Line 2 tax jurisdiction
-        MH ‚Üí KA, CGST+SGST ‚Üí IGST
+        MH ‚Ü' KA, CGST+SGST ‚Ü' IGST
         Resubmits to Priya
         Status: Draft (is_submitted: true)
 
 Step 5: Priya approves ‚úÖ
         created_by:  Rahul (user_id: 123)
         approved_by: Priya (user_id: 456)
-        created_by ‚â† approved_by ‚Üí SOX compliant ‚úÖ
+        created_by ‚â† approved_by ‚Ü' SOX compliant ‚úÖ
 
 Auto GL Entry Generated:
 Debit:  1200 AR           ‚Çπ1,74,000  ‚Üê Tata Steel owes Reliance
 Credit: 3100 Revenue      ‚Çπ1,50,000  ‚Üê Reliance earned it
 Credit: 2200 Tax Payable    ‚Çπ24,000  ‚Üê collected for the government
 
-Status: Draft ‚Üí Approved ‚úÖ
+Status: Draft ‚Ü' Approved ‚úÖ
 ```
 
 ### Future Enhancements (Phase 2)
@@ -143,7 +143,7 @@ Status: Draft ‚Üí Approved ‚úÖ
 
 ---
 
-## FR3 ‚Äî Invoice Sending
+## FR3 ‚Ä" Invoice Sending
 
 **Prototype extension implemented asynchronously after approval.**
 
@@ -151,7 +151,7 @@ Approval atomically inserts a PostgreSQL outbox event. A separate publisher
 relays it to Standard SQS, and a consumer delivers it to the idempotent console
 stub. Three failed receives redrive to a DLQ. Success records `sent_at` and
 transitions APPROVED to SENT. Payment remains valid while delivery is pending
-because approval‚Äînot notification‚Äîestablishes the receivable. Production
+because approval‚Ä"not notification‚Ä"establishes the receivable. Production
 replaces LocalStack and the stub with managed SQS plus Email/EDI/IRP adapters.
 
 ```
@@ -172,13 +172,13 @@ delivery fact automatically, and operational retry never repeats accounting.
 
 ---
 
-## FR4 ‚Äî Payment Recording and Allocation
+## FR4 ‚Ä" Payment Recording and Allocation
 
-System must record payments from customers and allocate them against one or more outstanding invoices. Payment allocation can be automatic (FIFO ‚Äî oldest invoice first) or manual (customer specifies allocation). System must handle partial payments, full payments, and overpayments. All payments generate GL journal entries automatically.
+System must record payments from customers and allocate them against one or more outstanding invoices. Payment allocation can be automatic (FIFO ‚Ä" oldest invoice first) or manual (customer specifies allocation). System must handle partial payments, full payments, and overpayments. All payments generate GL journal entries automatically.
 
 **Payment Terms on Invoice:**
-- payment_terms ‚Üí NET30/NET60/NET90
-- due_date ‚Üí invoice_date + payment_terms
+- payment_terms ‚Ü' NET30/NET60/NET90
+- due_date ‚Ü' invoice_date + payment_terms
 
 **Duplicate Prevention:**
 - Every write action uses one client-generated idempotency key across all retries.
@@ -190,7 +190,7 @@ System must record payments from customers and allocate them against one or more
 ```
 POST /payments
 
-Example 1 ‚Äî Full Payment (Auto FIFO):
+Example 1 ‚Ä" Full Payment (Auto FIFO):
 Tata Steel outstanding invoices:
 Invoice #1001  ‚Çπ1,74,000  due Jan 31  (oldest)
 Invoice #1002  ‚Çπ80,000    due Jan 31
@@ -201,9 +201,9 @@ UTR: HDFC2024013100123
 Mode: Auto (FIFO)
 
 Allocation:
-‚îú‚îÄ‚îÄ Invoice #1001 ‚Çπ1,74,000 ‚Üí Fully Paid ‚úÖ
-‚îú‚îÄ‚îÄ Invoice #1002 ‚Çπ80,000   ‚Üí Fully Paid ‚úÖ
-‚îî‚îÄ‚îÄ Invoice #1003 ‚Çπ46,000   ‚Üí Fully Paid ‚úÖ
+‚"ú‚"Ä‚"Ä Invoice #1001 ‚Çπ1,74,000 ‚Ü' Fully Paid ‚úÖ
+‚"ú‚"Ä‚"Ä Invoice #1002 ‚Çπ80,000   ‚Ü' Fully Paid ‚úÖ
+‚""‚"Ä‚"Ä Invoice #1003 ‚Çπ46,000   ‚Ü' Fully Paid ‚úÖ
 
 GL Entry:
 Debit:  1100 Cash    ‚Çπ3,00,000  (ref: P001)
@@ -211,40 +211,40 @@ Credit: 1200 AR      ‚Çπ3,00,000  (ref: P001)
 
 ---
 
-Example 2 ‚Äî Partial Payment (Auto FIFO):
+Example 2 ‚Ä" Partial Payment (Auto FIFO):
 Payment #P002 received: ‚Çπ2,00,000
 Allocation:
-‚îú‚îÄ‚îÄ Invoice #1001 ‚Çπ1,74,000 ‚Üí Fully Paid ‚úÖ
-‚îî‚îÄ‚îÄ Invoice #1002 ‚Çπ26,000   ‚Üí Partially Paid üîÑ (‚Çπ54,000 remaining)
-Invoice #1003 ‚Üí Untouched ‚ùå
+‚"ú‚"Ä‚"Ä Invoice #1001 ‚Çπ1,74,000 ‚Ü' Fully Paid ‚úÖ
+‚""‚"Ä‚"Ä Invoice #1002 ‚Çπ26,000   ‚Ü' Partially Paid ü"Ñ (‚Çπ54,000 remaining)
+Invoice #1003 ‚Ü' Untouched ‚ùå
 
 GL Entry:
 Debit:  1100 Cash    ‚Çπ2,00,000  (ref: P002)
 Credit: 1200 AR      ‚Çπ2,00,000  (ref: P002)
 
 Invoice Status:
-#1001 ‚Üí Paid
-#1002 ‚Üí Partially Paid
-#1003 ‚Üí Sent (unchanged)
+#1001 ‚Ü' Paid
+#1002 ‚Ü' Partially Paid
+#1003 ‚Ü' Sent (unchanged)
 
 ---
 
-Example 3 ‚Äî Manual Allocation:
+Example 3 ‚Ä" Manual Allocation:
 Payment #P003 received: ‚Çπ2,00,000
 Mode: Manual (remittance advice from Tata Steel)
 Allocation:
-‚îú‚îÄ‚îÄ Invoice #1001 ‚Çπ1,00,000
-‚îú‚îÄ‚îÄ Invoice #1002 ‚Çπ60,000
-‚îî‚îÄ‚îÄ Invoice #1003 ‚Çπ40,000
+‚"ú‚"Ä‚"Ä Invoice #1001 ‚Çπ1,00,000
+‚"ú‚"Ä‚"Ä Invoice #1002 ‚Çπ60,000
+‚""‚"Ä‚"Ä Invoice #1003 ‚Çπ40,000
 
 Invoice Status:
-#1001 ‚Üí Partially Paid (‚Çπ74,000 remaining)
-#1002 ‚Üí Partially Paid (‚Çπ20,000 remaining)
-#1003 ‚Üí Partially Paid (‚Çπ6,000 remaining)
+#1001 ‚Ü' Partially Paid (‚Çπ74,000 remaining)
+#1002 ‚Ü' Partially Paid (‚Çπ20,000 remaining)
+#1003 ‚Ü' Partially Paid (‚Çπ6,000 remaining)
 
 ---
 
-Example 4 ‚Äî Overpayment:
+Example 4 ‚Ä" Overpayment:
 Payment #P004 received: ‚Çπ4,00,000
 Total outstanding:      ‚Çπ3,00,000
 Overpayment:            ‚Çπ1,00,000
@@ -261,7 +261,7 @@ Options:
 
 ---
 
-Example 5 ‚Äî Multi-currency Partial Payments:
+Example 5 ‚Ä" Multi-currency Partial Payments:
 Invoice #2001: $1,000 (rate Jan 1 = 83) = ‚Çπ83,000 base
 
 Payment 1: Feb 1  $600  rate=80
@@ -287,7 +287,7 @@ Net FX Gain: ‚Çπ3,000
 
 ---
 
-## FR5 ‚Äî Credit Memo
+## FR5 ‚Ä" Credit Memo
 
 A credit memo is issued to correct an approved/sent/paid invoice. It cannot be raised against draft or void invoices. Credit memos have their own approval lifecycle. On approval, GL entries are automatically reversed.
 
@@ -296,10 +296,10 @@ A credit memo is issued to correct an approved/sent/paid invoice. It cannot be r
 concurrency, idempotency, direct-journal and reconciliation matrix passes.
 
 **Reasons:**
-- OVERCHARGE ‚Üí wrong price
-- RETURN ‚Üí goods returned (partial or full)
-- DUPLICATE ‚Üí invoice raised twice
-- CANCEL ‚Üí order cancelled after delivery
+- OVERCHARGE ‚Ü' wrong price
+- RETURN ‚Ü' goods returned (partial or full)
+- DUPLICATE ‚Ü' invoice raised twice
+- CANCEL ‚Ü' order cancelled after delivery
 
 **Allowed against:** Approved ‚úÖ Sent ‚úÖ Partially Paid ‚úÖ Paid ‚úÖ
 
@@ -314,7 +314,7 @@ Tata Steel returns 2 damaged Safety Valves
 Credit Memo #CM001:
 Against Invoice: #1001
 Reason: RETURN
-Lines: Safety Valves √ó 2 @ ‚Çπ5,000 = ‚Çπ10,000
+Lines: Safety Valves √-- 2 @ ‚Çπ5,000 = ‚Çπ10,000
 Approved by: Priya (Finance Manager)
 
 GL Entry:
@@ -331,7 +331,7 @@ Revenue/Tax reversals are capped at the original posted amounts.
 
 Net Tata Steel owes: ‚Çπ1,64,000
 
-States: Draft ‚Üí Approved ‚Üí Applied
+States: Draft ‚Ü' Approved ‚Ü' Applied
 ```
 
 ### Future Enhancements (Phase 2)
@@ -341,9 +341,9 @@ States: Draft ‚Üí Approved ‚Üí Applied
 
 ---
 
-## FR6 ‚Äî Write-off
+## FR6 ‚Ä" Write-off
 
-A write-off is raised when a customer cannot pay (bankruptcy, absconding, bad debt). It removes the outstanding amount from AR and records it as Bad Debt Expense. Requires CFO approval due to revenue impact. Write-off applies only to outstanding balance ‚Äî already paid amount is never reversed.
+A write-off is raised when a customer cannot pay (bankruptcy, absconding, bad debt). It removes the outstanding amount from AR and records it as Bad Debt Expense. Requires CFO approval due to revenue impact. Write-off applies only to outstanding balance ‚Ä" already paid amount is never reversed.
 
 **Implementation status:** CFO-only route implemented at
 `POST /invoices/{id}/writeoff`; its INR happy path and final reconciliation
@@ -356,7 +356,7 @@ pass, while extended acceptance/hardening remains pending.
 ```
 POST /invoices/{id}/writeoff
 
-Example 1 ‚Äî Full Write-off:
+Example 1 ‚Ä" Full Write-off:
 Invoice #1001: ‚Çπ1,74,000 (Sent to Tata Steel)
 Tata Steel declares bankruptcy.
 
@@ -373,7 +373,7 @@ Invoice Status: Written Off
 
 ---
 
-Example 2 ‚Äî Partial Payment + Write-off:
+Example 2 ‚Ä" Partial Payment + Write-off:
 Invoice:   ‚Çπ1,74,000
 Paid:      ‚Çπ1,00,000  ‚Üê already received, stays
 Write-off: ‚Çπ74,000    ‚Üê remaining balance only
@@ -392,18 +392,18 @@ Invoice Status: Written Off
 
 ---
 
-## FR7 ‚Äî Invoice Void
+## FR7 ‚Ä" Invoice Void
 
-An invoice is voided when it should never have been raised or was raised in error. Void is different from write-off ‚Äî write-off is customer cannot pay, void is invoice itself was wrong. Cannot void a paid or partially paid invoice ‚Äî use credit memo instead.
+An invoice is voided when it should never have been raised or was raised in error. Void is different from write-off ‚Ä" write-off is customer cannot pay, void is invoice itself was wrong. Cannot void a paid or partially paid invoice ‚Ä" use credit memo instead.
 
 **Implementation status:** Void route implemented at
 `POST /invoices/{id}/void`; DRAFT-without-GL is tested. Posted-reversal
 acceptance remains pending, and automatic reissue remains Phase 2.
 
 **Reasons:**
-- DUPLICATE ‚Üí same invoice raised twice
-- WRONG_CUSTOMER ‚Üí sent to wrong entity
-- DATA_ERROR ‚Üí wrong amounts, wrong items
+- DUPLICATE ‚Ü' same invoice raised twice
+- WRONG_CUSTOMER ‚Ü' sent to wrong entity
+- DATA_ERROR ‚Ü' wrong amounts, wrong items
 
 **Allowed against:** Draft ‚úÖ Approved ‚úÖ Sent ‚úÖ
 
@@ -434,7 +434,7 @@ Invoice Status: Void ‚úÖ
 
 ---
 
-## FR8 ‚Äî AR Aging Report
+## FR8 ‚Ä" AR Aging Report
 
 System must generate AR aging report showing outstanding invoice balances grouped by days overdue. Used by CFO and collections team to track overdue payments and identify write-off candidates.
 
@@ -443,10 +443,10 @@ when the materialized view was refreshed; clients cannot request an arbitrary
 historical date.
 
 **Aging Buckets:**
-- Current ‚Üí not yet due (due_date >= today)
-- 30 days ‚Üí overdue 1-30 days
-- 60 days ‚Üí overdue 31-60 days
-- 90+ days ‚Üí overdue 61+ days ‚Üí danger zone!
+- Current ‚Ü' not yet due (due_date >= today)
+- 30 days ‚Ü' overdue 1-30 days
+- 60 days ‚Ü' overdue 31-60 days
+- 90+ days ‚Ü' overdue 61+ days ‚Ü' danger zone!
 
 **Calculation:**
 - days_overdue = today - due_date
@@ -470,8 +470,8 @@ Current   | #1003     | ‚Çπ80,000
 Total     |           | ‚Çπ1,54,000
 
 Invoice detail:
-#1002  due Jan 1   overdue 30 days  ‚Çπ74,000  ‚Üí call collections
-#1003  due Feb 1   current          ‚Çπ80,000  ‚Üí monitor
+#1002  due Jan 1   overdue 30 days  ‚Çπ74,000  ‚Ü' call collections
+#1003  due Feb 1   current          ‚Çπ80,000  ‚Ü' monitor
 ```
 
 ### Future Enhancements (Phase 2)
@@ -484,7 +484,7 @@ Invoice detail:
 
 ---
 
-## FR9 ‚Äî GL Journal Entries and Reconciliation
+## FR9 ‚Ä" GL Journal Entries and Reconciliation
 
 The system maintains a complete journal-entry trail for every implemented
 financial event. API6 exposes the entries with cursor pagination, and the
@@ -492,9 +492,9 @@ health reconciliation check compares the AR subledger with the AR control
 account. A scheduled reconciliation and alerting job is future hardening.
 
 ```
-GET /journal-entries?invoice=1001
+GET /journal-entries‚Ü'invoice=1001
 
-Invoice #1001 ‚Äî Complete Financial History:
+Invoice #1001 ‚Ä" Complete Financial History:
 
 Date       | Entry | Type             | Debit               | Credit
 -----------|-------|------------------|---------------------|--------------------
@@ -507,7 +507,7 @@ Net AR outstanding: ‚Çπ64,000
 
 **Reconciliation Check:**
 ```
-Reconciliation Job ‚Äî Jan 31, 2024 02:00am
+Reconciliation Job ‚Ä" Jan 31, 2024 02:00am
 
 GL Account 1200 (AR):
 Sum of all journal entry lines = ‚Çπ2,34,000
@@ -519,7 +519,7 @@ Invoice #1003  Adani Ports  ‚Çπ30,000    (open)
                             ----------
 Total:                      ‚Çπ2,34,000
 
-GL = Subledger? ‚úÖ Books are clean!
+GL = Subledger‚Ü' ‚úÖ Books are clean!
 
 Mismatch scenario:
 GL shows:        ‚Çπ2,34,000
@@ -538,29 +538,29 @@ COMMIT
 
 **Journal Entry Rules:**
 - Application code treats posted entries as append-only
-- Always balanced ‚Äî debits = credits
-- Always referenced ‚Äî every JE links to source document
+- Always balanced ‚Ä" debits = credits
+- Always referenced ‚Ä" every JE links to source document
 - Long-term immutable retention is production hardening
 
 ### Future Enhancements (Phase 2)
 - Scheduled reconciliation, alerting and operational ownership
 - Database privilege hardening to prohibit journal update/delete
 - Automated mismatch correction
-- Kafka ‚Üí S3 WORM archival for 7 year retention
+- Kafka ‚Ü' S3 WORM archival for 7 year retention
 - Reconciliation dashboard
 
 ---
 
-## FR10 ‚Äî Multi-tenant Isolation
+## FR10 ‚Ä" Multi-tenant Isolation
 
 System must completely isolate data between tenants. No tenant can ever see another tenant's data. Isolation enforced at both application layer (JWT) and database layer (Row Level Security). Every table contains tenant_id. Every query filters by tenant_id.
 
 **Tenant Hierarchy:**
 ```
 Tenant (Reliance)                ‚Üê one contract, one JWT
-‚îú‚îÄ‚îÄ Entity (Reliance Retail)     ‚Üê entity_id in JWT
-‚îú‚îÄ‚îÄ Entity (Reliance Jio)
-‚îî‚îÄ‚îÄ Entity (Reliance Industries)
+‚"ú‚"Ä‚"Ä Entity (Reliance Retail)     ‚Üê entity_id in JWT
+‚"ú‚"Ä‚"Ä Entity (Reliance Jio)
+‚""‚"Ä‚"Ä Entity (Reliance Industries)
 ```
 
 **JWT Token:**
@@ -581,7 +581,7 @@ Every API request:
 3. Never trust tenant_id from request body!
 
 GET /invoices
-‚Üí SELECT * FROM invoices
+‚Ü' SELECT * FROM invoices
   WHERE tenant_id = 'reliance'        ‚Üê from JWT
   AND entity_id = 'reliance-retail'   ‚Üê from JWT
 ```
@@ -598,8 +598,8 @@ CREATE POLICY tenant_isolation ON invoices
 ```
 IoT:                    ERP:
 Customer                Tenant
-‚îî‚îÄ‚îÄ Site                ‚îî‚îÄ‚îÄ Entity
-    ‚îî‚îÄ‚îÄ Device              ‚îî‚îÄ‚îÄ Invoice/Payment
+‚""‚"Ä‚"Ä Site                ‚""‚"Ä‚"Ä Entity
+    ‚""‚"Ä‚"Ä Device              ‚""‚"Ä‚"Ä Invoice/Payment
 
 IoT: WHERE customer_id=X
 ERP: WHERE tenant_id=X AND entity_id=Y
@@ -614,9 +614,9 @@ ERP: WHERE tenant_id=X AND entity_id=Y
 
 ---
 
-## FR11 ‚Äî Multi-currency
+## FR11 ‚Ä" Multi-currency
 
-**Implementation status:** `COMPLETE` for V1 ‚Äî ingestion, invoice/payment rate
+**Implementation status:** `COMPLETE` for V1 ‚Ä" ingestion, invoice/payment rate
 snapshots, base-currency journals, realized gain/loss, partial payments and
 fail-closed tests are implemented. See
 [FX Rate Ingestion and Multi-Currency Design](fx-rate-design.md).
@@ -633,7 +633,7 @@ transaction currency; cross-currency settlement is V2.
 pg_cron (21:00 IST weekdays):
 Insert one PENDING fx_import_job
 FX worker fetches official ECB EUR reference quotes
-Worker derives and stores tenant-approved foreign‚ÜíINR rates:
+Worker derives and stores tenant-approved foreign‚Ü'INR rates:
 
 from_currency:  USD
 to_currency:    INR
@@ -645,7 +645,7 @@ source:         ECB_DAILY_REFERENCE
 **Invoice Amounts (both stored):**
 ```
 Invoice #2001
-Reliance USA ‚Üí US Customer
+Reliance USA ‚Ü' US Customer
 
 transaction_currency: USD
 transaction_amount:   $1,000    ‚Üê sent to customer
@@ -668,7 +668,7 @@ Credit: 4300 FX Gain/Loss  ‚Çπ3,000   ‚Üê difference
 
 **CFO Consolidated Report:**
 ```
-Reliance Group AR ‚Äî Jan 31, 2024
+Reliance Group AR ‚Ä" Jan 31, 2024
 
 Entity                | Currency | Amount      | INR Equivalent
 ----------------------|----------|-------------|----------------
@@ -686,10 +686,10 @@ Net:      +‚Çπ3,000
 
 Missing Exchange Rate Handling:
 If rate not found for invoice date:
-‚Üí Use latest APPROVED prior-business-day rate only when <= 3 days old
-‚Üí Disclose exact rate ID, provider date and prior-date warning
-‚Üí If missing/older than 3 days, reject with FX_RATE_UNAVAILABLE
-‚Üí Never substitute 1.0 for a foreign-currency pair
+‚Ü' Use latest APPROVED prior-business-day rate only when <= 3 days old
+‚Ü' Disclose exact rate ID, provider date and prior-date warning
+‚Ü' If missing/older than 3 days, reject with FX_RATE_UNAVAILABLE
+‚Ü' Never substitute 1.0 for a foreign-currency pair
 
 Example:
 Invoice date: Jan 1 (Sunday, markets closed, no rate available)
@@ -707,7 +707,7 @@ Audit trail:  Records immutable rate ID, value, source date and reason
 
 ---
 
-## FR12 ‚Äî Audit Trail
+## FR12 ‚Ä" Audit Trail
 
 Financial record changes are captured in PostgreSQL `audit_log` by database
 triggers, including actor, action, timestamp, and old/new values. This is the
@@ -715,9 +715,9 @@ implemented V1 queryable audit trail. Restrictive database privileges and
 seven-year WORM archival remain production hardening.
 
 ```
-GET /audit-log?record_type=invoice&record_id=1001
+GET /audit-log‚Ü'record_type=invoice&record_id=1001
 
-Invoice #1001 ‚Äî Audit Trail:
+Invoice #1001 ‚Ä" Audit Trail:
 
 Time                | User  | Action | Field         | Old      | New
 --------------------|-------|--------|---------------|----------|-------------
@@ -731,9 +731,9 @@ Time                | User  | Action | Field         | Old      | New
 
 **Storage Tiering:**
 ```
-Audit table (PostgreSQL) ‚Üí implemented; quick audit queries
-Kafka/event stream       ‚Üí future; replay and archival pipeline
-S3 Object Lock/WORM      ‚Üí future; seven-year immutable retention
+Audit table (PostgreSQL) ‚Ü' implemented; quick audit queries
+Kafka/event stream       ‚Ü' future; replay and archival pipeline
+S3 Object Lock/WORM      ‚Ü' future; seven-year immutable retention
 ```
 
 ### Future Enhancements (Phase 2)
@@ -747,7 +747,7 @@ S3 Object Lock/WORM      ‚Üí future; seven-year immutable retention
 
 ---
 
-## FR13 ‚Äî Accounting Period Enforcement
+## FR13 ‚Ä" Accounting Period Enforcement
 
 The implemented scope prevents posting to non-OPEN monthly/yearly periods at
 both application and database-trigger levels. Two levels of closure are
@@ -755,7 +755,7 @@ modelled: CLOSED (eligible for a future audited CFO reopen workflow) and LOCKED
 (permanent after audit/tax filing).
 
 ```
-Accounting Periods ‚Äî Reliance Retail:
+Accounting Periods ‚Ä" Reliance Retail:
 
 Period    | Start      | End        | Status | Closed By | Closed At
 ----------|------------|------------|--------|-----------|------------------
@@ -770,8 +770,8 @@ Rahul tries to approve invoice dated Jan 28 on Feb 5:
 
 **Two Lock Levels:**
 ```
-CLOSED ‚Üí CFO can reopen (forgot one invoice etc)
-LOCKED ‚Üí permanent. tax filed. auditor signed off.
+CLOSED ‚Ü' CFO can reopen (forgot one invoice etc)
+LOCKED ‚Ü' permanent. tax filed. auditor signed off.
          nobody can reopen. not even CFO!
 ```
 
@@ -782,18 +782,18 @@ if period.status in ['CLOSED', 'LOCKED']:
     raise PeriodClosedException()
 
 # DB level trigger on journal_entries
-BEFORE INSERT ‚Üí verify period is OPEN
+BEFORE INSERT ‚Ü' verify period is OPEN
 ```
 
 **Prior Period Corrections:**
 ```
-January LOCKED but error found?
-‚Üí Cannot reopen January
-‚Üí Post correction in current open period (March)
-‚Üí Preserve document_date = original January date
-‚Üí Set entry_date (posting date) = date in current open period
-‚Üí With clear reference to original January entry
-‚Üí Auditor sees full correction trail
+January LOCKED but error found‚Ü'
+‚Ü' Cannot reopen January
+‚Ü' Post correction in current open period (March)
+‚Ü' Preserve document_date = original January date
+‚Ü' Set entry_date (posting date) = date in current open period
+‚Ü' With clear reference to original January entry
+‚Ü' Auditor sees full correction trail
 ```
 
 Controls: CFO approval, mandatory reason, reference to the original invoice and
@@ -802,7 +802,7 @@ entries are never backdated into a LOCKED period.
 
 ---
 
-## FR14 ‚Äî RBAC and Segregation of Duties
+## FR14 ‚Ä" RBAC and Segregation of Duties
 
 Role-based authorization is implemented for financial APIs. JWT roles determine
 allowed actions, and SOX segregation prevents the same user from creating and
@@ -810,17 +810,17 @@ approving an invoice.
 
 **Roles:**
 ```
-invoice_creator   ‚Üí create/edit draft invoices
-invoice_approver  ‚Üí approve/reject invoices
-payment_recorder  ‚Üí record payments
-cfo               ‚Üí write-offs and financial administration
-auditor           ‚Üí read-only access to financial APIs
+invoice_creator   ‚Ü' create/edit draft invoices
+invoice_approver  ‚Ü' approve/reject invoices
+payment_recorder  ‚Ü' record payments
+cfo               ‚Ü' write-offs and financial administration
+auditor           ‚Ü' read-only access to financial APIs
 ```
 
 **Example:**
 ```
-Rahul ‚Üí role: invoice_creator
-Priya ‚Üí role: invoice_approver, cfo
+Rahul ‚Ü' role: invoice_creator
+Priya ‚Ü' role: invoice_approver, cfo
 
 POST /invoices/{id}/approve
 Request by: Rahul (invoice_creator)
@@ -830,16 +830,16 @@ Request by: Priya (invoice_approver)
 Response: 200 OK
 
 SOX segregation:
-created_by != approved_by ‚Üí enforced in code and DB
+created_by != approved_by ‚Ü' enforced in code and DB
 ```
 
 ---
 
-## Future-FR1 ‚Äî Intercompany Consolidation
+## Future-FR1 ‚Ä" Intercompany Consolidation
 
 **Why deferred:** The assessment's core AR flow ends at the seller entity;
 buyer-side AP posting, matching and consolidation require a separate
-cross-entity accounting workflow. **Plan:** Yes ‚Äî targeted for V2 using an
+cross-entity accounting workflow. **Plan:** Yes ‚Ä" targeted for V2 using an
 audited consolidation ledger without rewriting statutory entity books.
 
 Multi-entity scoping is implemented under FR10. Intercompany buyer-side
@@ -847,8 +847,8 @@ posting, matching, elimination and consolidated reporting are a future
 capability. Each entity must retain its own statutory books.
 
 ```
-GET /reports/consolidated?tenant_id=T001&as_of=2024-01-31
-GET /reports/entity?entity_id=E002&as_of=2024-01-31
+GET /reports/consolidated‚Ü'tenant_id=T001&as_of=2024-01-31
+GET /reports/entity‚Ü'entity_id=E002&as_of=2024-01-31
 
 Reliance Retail (E002) invoices Reliance Jio (E003)
 ‚Çπ10,00,000 for IT services
@@ -886,13 +886,13 @@ rewrites either entity's statutory books.
 ```
 IF sender_entity_id AND receiver_entity_id
    both have same tenant_id
-‚Üí is_intercompany = TRUE
-‚Üí eliminate in consolidated report
+‚Ü' is_intercompany = TRUE
+‚Ü' eliminate in consolidated report
 ```
 
 **External Customer (not intercompany):**
 ```
-Reliance Retail ‚Üí Tata Steel
+Reliance Retail ‚Ü' Tata Steel
 tenant_id:         T001
 sender_entity_id:  E002
 customer_id:       tata-steel  ‚Üê external customer!
@@ -900,7 +900,7 @@ is_intercompany:   FALSE ‚úÖ
 ```
 
 ### Future Enhancements (Phase 2)
-- Intercompany reconciliation and matching (Retail AR = Jio AP?)
+- Intercompany reconciliation and matching (Retail AR = Jio AP‚Ü')
 - Audited, idempotent elimination batches in a separate consolidation ledger
 - Mismatch workflow instead of silently eliminating unmatched balances
 - Transfer pricing compliance
@@ -910,18 +910,18 @@ is_intercompany:   FALSE ‚úÖ
 
 ---
 
-## Future-FR2 ‚Äî Manual Journal Entry
+## Future-FR2 ‚Ä" Manual Journal Entry
 
 **Why deferred:** Manual posting can bypass source-document controls and needs
 a dedicated maker-checker workflow, approval limits and reversal handling;
-these were outside the prototype's required APIs. **Plan:** Yes ‚Äî targeted for
+these were outside the prototype's required APIs. **Plan:** Yes ‚Ä" targeted for
 V2 after those controls and period-management APIs exist.
 
 System must support manual journal entries for corrections, prior period adjustments, and write-off corrections. Manual entries require CFO approval and mandatory description. Full audit trail captured. Cannot be posted to locked periods.
 
 ```
 POST /journal-entries/manual
-GET  /journal-entries/manual?status=pending
+GET  /journal-entries/manual‚Ü'status=pending
 POST /journal-entries/manual/{id}/approve
 
 Scenario: Reconciliation found ‚Çπ10,000 mismatch
@@ -960,11 +960,11 @@ Posted:   System Feb 5 11:00
 
 ---
 
-## Future-FR3 ‚Äî Period Management APIs
+## Future-FR3 ‚Ä" Period Management APIs
 
 **Why deferred:** Posting into non-OPEN periods is already prevented, while
 closing, locking and reopening periods are administrative workflows requiring
-CFO authorization, mandatory reasons and stronger audit tests. **Plan:** Yes ‚Äî
+CFO authorization, mandatory reasons and stronger audit tests. **Plan:** Yes ‚Ä"
 targeted for V2; enforcement remains active in V1.
 
 The posting enforcement exists; administrative workflow endpoints are
@@ -984,12 +984,12 @@ GET  /periods               ‚Üê list periods and status
 
 ---
 
-## Future-FR4 ‚Äî User Management APIs
+## Future-FR4 ‚Ä" User Management APIs
 
 **Why deferred:** V1 consumes signed JWT identities and seeded roles; secure
 user provisioning, credential lifecycle and role administration belong behind
 an enterprise identity provider rather than the AR service itself. **Plan:**
-Yes ‚Äî V2 will integrate an IdP and expose only the required ERP role-mapping
+Yes ‚Ä" V2 will integrate an IdP and expose only the required ERP role-mapping
 administration.
 
 Role administration is not part of the implemented prototype:

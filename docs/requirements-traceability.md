@@ -17,7 +17,7 @@ It follows the original assessment rather than treating every idea in
 | `USER INPUT` | Cannot be completed truthfully without Pankaj's personal information |
 | `NOT PLANNED` | Optional bonus deliberately excluded, with an honest rationale |
 
-## A. Working Prototype â€” Explicitly Required
+## A. Working Prototype â€" Explicitly Required
 
 These are the strongest submission obligations: the assessment explicitly
 labels them required prototype endpoints/functionality.
@@ -29,32 +29,32 @@ labels them required prototype endpoints/functionality.
 | WP3 | `POST /invoices/{id}/approve` plus GL entries | Complete | Implemented and integration/concurrency-tested | `COMPLETE` | Atomic approval, GL, idempotency and delivery-outbox write; SQS publication is after commit |
 | WP4 | `POST /payments` allocated to one or more invoices | Complete | AUTO FIFO and MANUAL allocation tested | `COMPLETE` | Partial payment, idempotent retry and overpayment liability are tested |
 | WP5 | `GET /customers/{id}/aging` with current/30/60/90+ | Complete | Implemented and tested | `COMPLETE` | PostgreSQL MV, pg_cron refresh and freshness timestamp |
-| WP6 | `GET /journal-entries?invoice={id}` | Complete | Implemented and pagination-tested | `COMPLETE` | Balanced entries and invoice-wide AR summary verified |
+| WP6 | `GET /journal-entriesâ†'invoice={id}` | Complete | Implemented and pagination-tested | `COMPLETE` | Balanced entries and invoice-wide AR summary verified |
 | WP7 | Multi-tenant isolation | Complete | Tenant and entity denial tests pass | `COMPLETE` | JWT-derived scope plus application filters; production RLS hardening tracked under NFR3 |
 | WP8 | Validated invoice state transitions | Complete | Core create/approve/send/pay path tested | `COMPLETE` | Bonus void/write-off routes exist but remain outside this required, tested claim |
 | WP9 | Automatic GL entry generation on approval | Complete | Balanced journal tested | `COMPLETE` | AR, Revenue and Tax Payable lines |
 | WP10 | FIFO or manual payment allocation | Complete | Both modes implemented; AUTO path tested in walkthrough | `COMPLETE` | MANUAL also exercised by overpayment control |
 | WP11 | Basic audit logging | Complete | DB triggers active during tested writes | `COMPLETE` | Actor and old/new row data captured; immutability hardening is NFR4 |
 
-## B. Data Model and Architecture â€” Explicitly Required Design
+## B. Data Model and Architecture â€" Explicitly Required Design
 
 | ID | Assessment requirement | Design | Prototype/test | Status | Evidence / remaining action |
 |---|---|---|---|---|---|
 | DA1 | ER model with Customer, Invoice, Line Item, Payment, Credit Memo, GL Account and Journal Entry | Complete | Tables/models exist | `COMPLETE` | `docs/data-model.md`, ER diagrams, migration 001 |
-| DA2 | Tenant isolation with multi-entity/subsidiary structure | Complete | Same-tenant sibling-entity isolation tested | `COMPLETE` | Tenant â†’ Entity model and entity-scoped idempotency |
+| DA2 | Tenant isolation with multi-entity/subsidiary structure | Complete | Same-tenant sibling-entity isolation tested | `COMPLETE` | Tenant â†' Entity model and entity-scoped idempotency |
 | DA3 | Base vs transaction currency and exchange-rate storage | Complete | Live ECB ingestion plus invoice, approval and payment snapshots/journals tested | `COMPLETE` | Locked immutable rate IDs; never silently default missing FX rates to 1.0 |
 | DA4 | Audit trail: who changed what and when | Complete | DB triggers implemented | `COMPLETE` | Application sets transaction-local actor context |
 | DA5 | Invoice-to-GL accounting | Complete | Implemented/tested | `COMPLETE` | Approval journal balances |
 | DA6 | Payment recording and allocation | Complete | Implemented/tested | `COMPLETE` | Payment, allocation, invoice and journal commit atomically |
 | DA7 | Partial payments and overpayments | Complete | Implemented/tested | `COMPLETE` | Unapplied amount credits Customer Credit liability, not AR |
 | DA8 | Credit memo application and write-off procedures | Complete | Credit memo extended matrix complete; write-off INR happy path passes | `PARTIAL` | Complete write-off entity/FX/concurrency/idempotency/direct-journal tests |
-| DA9 | Lifecycle states and transition rules | Complete | Core path tested; bonus terminal paths implemented | `COMPLETE` | DRAFT, APPROVED, SENT, PARTIALLY_PAID and PAID tested; VOID/WRITTEN_OFF verification tracked under B6â€“B8 |
+| DA9 | Lifecycle states and transition rules | Complete | Core path tested; bonus terminal paths implemented | `COMPLETE` | DRAFT, APPROVED, SENT, PARTIALLY_PAID and PAID tested; VOID/WRITTEN_OFF verification tracked under B6â€"B8 |
 | DA10 | Operations allowed in each state | Complete | Core write guards implemented | `COMPLETE` | Approved invoices are not edited in place; amendment paths are documented |
 | DA11 | Key API request/response contracts | Complete | Six required APIs implemented | `COMPLETE` | `docs/api-design.md` |
 | DA12 | Payment idempotency approach | Complete | Implemented/tested | `COMPLETE` | Entity-scoped key, request hash, cached response and payment-reference uniqueness |
 | DA13 | Batch invoicing/bulk payment approach | Complete | No bulk API required | `DESIGN COMPLETE` | Async bounded jobs, per-item idempotency and retry are documented as V2 |
 
-## C. Financial Controls and Operational Analysis â€” Explicitly Required Design
+## C. Financial Controls and Operational Analysis â€" Explicitly Required Design
 
 | ID | Assessment requirement | Design | Prototype/test | Status | Evidence / remaining action |
 |---|---|---|---|---|---|
@@ -122,6 +122,6 @@ the interview story separates prototype correctness from production readiness.
 
 Work through only one item at a time:
 
-1. `B7`â€“`B8` â€” Bonus endpoint verification/hardening; `B9` period-management decision
-2. `NFR2`â€“`NFR-B3` â€” Production-hardening decisions
-3. `SUB4`â€“`SUB5` â€” Candidate/final-submission completion
+1. `B7`â€"`B8` â€" Bonus endpoint verification/hardening; `B9` period-management decision
+2. `NFR2`â€"`NFR-B3` â€" Production-hardening decisions
+3. `SUB4`â€"`SUB5` â€" Candidate/final-submission completion

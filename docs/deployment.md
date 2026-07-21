@@ -38,14 +38,14 @@ chmod +x deploy.sh
 Expected final output begins with `Deployment successful` and lists eight
 running containers:
 
-- `erp_db` â€” healthy
-- `erp_gateway` â€” Envoy, publicly exposed on port 8000
-- `erp_app` â€” FastAPI, internal port 8080 with no host mapping
-- `erp_stub` â€” running on port 9000
-- `erp_localstack` â€” healthy; local SQS/DLQ on port 4566
-- `erp_outbox_publisher` â€” running; PostgreSQL outbox â†’ SQS
-- `erp_delivery_worker` â€” running; SQS â†’ delivery adapter
-- `erp_fx_rate_worker` â€” running; imports official ECB reference rates
+- `erp_db` â€" healthy
+- `erp_gateway` â€" Envoy, publicly exposed on port 8000
+- `erp_app` â€" FastAPI, internal port 8080 with no host mapping
+- `erp_stub` â€" running on port 9000
+- `erp_localstack` â€" healthy; local SQS/DLQ on port 4566
+- `erp_outbox_publisher` â€" running; PostgreSQL outbox â†' SQS
+- `erp_delivery_worker` â€" running; SQS â†' delivery adapter
+- `erp_fx_rate_worker` â€" running; imports official ECB reference rates
 
 The script prints these endpoints:
 

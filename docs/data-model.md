@@ -1,9 +1,9 @@
-# Data Model â€” ERP AR Module
+# Data Model â€" ERP AR Module
 
 ## Table of Contents
 - [Entity List](#entity-list)
-- [ER Diagram â€” Core Entities](#er-diagram--core-entities)
-- [ER Diagram â€” Supporting Entities](#er-diagram--supporting-entities)
+- [ER Diagram â€" Core Entities](#er-diagram--core-entities)
+- [ER Diagram â€" Supporting Entities](#er-diagram--supporting-entities)
 - [Table Schemas](#table-schemas)
 - [Key Design Decisions](#key-design-decisions)
 
@@ -15,7 +15,7 @@
 
 | Entity | Description |
 |--------|-------------|
-| Tenant | ERP customer â€” owns all data, one contract |
+| Tenant | ERP customer â€" owns all data, one contract |
 | Entity | Legal subsidiary within a tenant |
 | Customer | External company being invoiced |
 | Invoice | The bill sent to customer |
@@ -37,18 +37,18 @@
 | Credit Memo | Correction document against an invoice |
 | AR Aging (materialized view) | Current derived snapshot by tenant, entity, and customer; refreshed every 5 minutes |
 | Idempotency Key | Tenant- and endpoint-scoped write claim with request hash and cached response |
-| Delivery Outbox | Durable invoice-delivery event and DBâ†’SQS publication lifecycle |
+| Delivery Outbox | Durable invoice-delivery event and DBâ†'SQS publication lifecycle |
 | FX Import Job | Durable pg_cron request claimed by the FX worker; retry and provenance boundary |
 
 ---
 
-## ER Diagram â€” Core Entities
+## ER Diagram â€" Core Entities
 
 ![Core entities ER diagram](er-diagram-core.svg)
 
 ---
 
-## ER Diagram â€” Supporting Entities
+## ER Diagram â€" Supporting Entities
 
 ![Supporting entities ER diagram](er-diagram-supporting.svg)
 
@@ -76,10 +76,10 @@ and the resulting realized gain/loss.
 Key design decisions in the schema:
 - UUID primary keys on all tables
 - Row Level Security on every table (tenant isolation at DB level)
-- Audit triggers fire automatically â€” cannot be bypassed by application code
-- Journal entries are immutable â€” no UPDATE/DELETE ever
+- Audit triggers fire automatically â€" cannot be bypassed by application code
+- Journal entries are immutable â€" no UPDATE/DELETE ever
 - SOX segregation enforced via CHECK constraint: invoice creator != approver
-- Period close enforced via DB triggers â€” CLOSED requires an audited reopen;
+- Period close enforced via DB triggers â€" CLOSED requires an audited reopen;
   LOCKED is irreversible, and adjustments post to a current OPEN period while
   preserving the original document date
 - Idempotency keys table prevents duplicate writes and safely replays completed
@@ -87,10 +87,10 @@ Key design decisions in the schema:
 - Delivery outbox provides atomic approval/event persistence, multi-publisher
   safe claims, broker message metadata, separate publication/delivery attempt
   counters, DEAD recovery state, and a stable downstream idempotency identifier
-- The lifecycle is PENDING â†’ PROCESSING â†’ PUBLISHED â†’ DELIVERING â†’ DELIVERED;
+- The lifecycle is PENDING â†' PROCESSING â†' PUBLISHED â†' DELIVERING â†' DELIVERED;
   publication or delivery exhaustion produces DEAD. Standard SQS/DLQ remains
   transport state, while PostgreSQL remains the operational source of truth.
-- AR Aging as a current-only materialized view â€” refreshed every 5 minutes;
+- AR Aging as a current-only materialized view â€" refreshed every 5 minutes;
   historical reporting requires event reconstruction or persisted snapshots
 - Foreign-currency documents snapshot both the approved rate ID and numeric
   rate; approved rate corrections insert a superseding row rather than changing
