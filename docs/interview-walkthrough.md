@@ -1,4 +1,4 @@
-# Technical Walkthrough Ñ ERP AR Module
+# Technical Walkthrough ERP AR Module
 
 This document is your live guide during the technical session.
 Open it on one side of your screen, run the demo on the other.
@@ -9,7 +9,7 @@ Open it on one side of your screen, run the demo on the other.
 
 This is a multi-tenant Accounts Receivable module built with FastAPI and PostgreSQL.
 
-Six required APIs Ñ all implemented and tested:
+Six required APIs Ã‘ all implemented and tested:
 1. POST /invoices
 2. GET /invoices/{id}
 3. POST /invoices/{id}/approve
@@ -17,7 +17,7 @@ Six required APIs Ñ all implemented and tested:
 5. GET /customers/{id}/aging
 6. GET /journal-entries
 
-Three bonus APIs Ñ implemented:
+Three bonus APIs Ã‘ implemented:
 - POST /invoices/{id}/credit-memos (FR-B1)
 - POST /invoices/{id}/writeoff (FR-B2)
 - POST /invoices/{id}/void (FR-B3)
@@ -42,11 +42,11 @@ Client
 ```
 
 Key decisions:
-- Envoy is the only public entry point Ñ validates JWTs early
-- AR Application re-validates JWT independently (Zero Trust Ñ gateway can be bypassed)
-- No Redis Ñ PostgreSQL owns all financial state, locks, idempotency
-- Modular monolith Ñ invoice + payment + GL share one ACID transaction
-- Transactional outbox Ñ delivery committed with invoice, not dependent on SQS availability
+- Envoy is the only public entry point Ã‘ validates JWTs early
+- AR Application re-validates JWT independently (Zero Trust Ã‘ gateway can be bypassed)
+- No Redis Ã‘ PostgreSQL owns all financial state, locks, idempotency
+- Modular monolith Ã‘ invoice + payment + GL share one ACID transaction
+- Transactional outbox Ã‘ delivery committed with invoice, not dependent on SQS availability
 
 ---
 
@@ -60,17 +60,17 @@ Tenant ? Entity ? Customer ? Invoice ? Line Items
                            ? Journal Entry ? Lines
 ```
 
-- Every table has tenant_id Ñ RLS enforces isolation at DB level
+- Every table has tenant_id Ã‘ RLS enforces isolation at DB level
 - UUID primary keys on all tables
-- Journal entries are immutable Ñ no UPDATE or DELETE ever
-- Audit triggers fire at DB level Ñ cannot be bypassed by application code
+- Journal entries are immutable Ã‘ no UPDATE or DELETE ever
+- Audit triggers fire at DB level Ã‘ cannot be bypassed by application code
 - /health endpoint reconciles AR subledger to GL account 1200 continuously
 
 ---
 
 ## One Complete Financial Transaction
 
-### Step 1 Ñ Create invoice (Rahul, invoice_creator)
+### Step 1 Ã‘ Create invoice (Rahul, invoice_creator)
 
 ```
 POST /api/v1/invoices
@@ -89,7 +89,7 @@ Committed atomically:
   audit_log (DB trigger)
 ```
 
-### Step 2 Ñ Approve invoice (Priya, invoice_approver)
+### Step 2 Ã‘ Approve invoice (Priya, invoice_approver)
 
 ```
 POST /api/v1/invoices/{id}/approve
@@ -116,7 +116,7 @@ All committed atomically:
   audit_log (DB trigger)
 ```
 
-### Step 3 Ñ Delivery (async, non-blocking)
+### Step 3 Ã‘ Delivery (async, non-blocking)
 
 ```
 After commit:
@@ -127,7 +127,7 @@ SQS downtime cannot reverse the receivable or GL entry.
 Three failed receives ? DLQ. CFO can requeue.
 ```
 
-### Step 4 Ñ Record payment (Priya, payment_recorder)
+### Step 4 Ã‘ Record payment (Priya, payment_recorder)
 
 ```
 POST /api/v1/payments
@@ -135,7 +135,7 @@ X-Idempotency-Key: uuid
 
 SERIALIZABLE isolation (prevents double allocation)
 
-AUTO mode: FIFO Ñ oldest due_date first
+AUTO mode: FIFO Ã‘ oldest due_date first
 MANUAL mode: client specifies invoice + amount
 
 GL entry (one for entire payment):
@@ -150,7 +150,7 @@ Defence in depth against duplicates:
   ? SERIALIZABLE isolation
 ```
 
-### Step 5 Ñ Verify
+### Step 5 Ã‘ Verify
 
 ```
 GET /invoices/{id}         ? shows payment history, balance INR 74,000
@@ -166,14 +166,14 @@ GET /health                ? subledger AR = GL AR = INR 74,000 ?
 ### 1. Modular monolith over microservices
 Invoice + payment + GL share one ACID transaction. At 5-10 TPS normal load there is no scaling problem to solve. Decompose when a real boundary appears.
 
-### 2. PostgreSQL only Ñ no Redis
+### 2. PostgreSQL only Ã‘ no Redis
 Redis is not durable. Redis down = lock lost = double payment risk. PostgreSQL serializable isolation handles concurrent payment allocation safely. No external dependency for financial correctness.
 
 ### 3. Transactional outbox + SQS
 Direct HTTP makes approval depend on notification. Direct SQS creates a dual-write gap. Outbox commits the event with the invoice atomically. SQS adds buffering and DLQ. Delivery failure never reverses accounting.
 
 ### 4. Live invoice detail, materialized aging
-Invoice detail is live Ñ approver cannot act on stale balances. Aging is a portfolio view where 5-minute staleness is acceptable. Two strategies, explicit freshness timestamp on aging response.
+Invoice detail is live Ã‘ approver cannot act on stale balances. Aging is a portfolio view where 5-minute staleness is acceptable. Two strategies, explicit freshness timestamp on aging response.
 
 ### 5. Stored FX rates over live lookup
 Worker fetches and validates rates. Financial APIs use approved stored rates, snapshotted per transaction. Reproducible journals, no provider dependency in payment latency. Max rate age: 24 hours before blocking.
@@ -192,7 +192,7 @@ A payment allocates across multiple invoice rows simultaneously. A version prote
 Idempotency key must commit in the same ACID transaction as the payment. Redis + DB = two systems = possible inconsistency on crash.
 
 **Can RLS guarantee isolation by itself?**
-Not completely in prototype Ñ runtime owner can bypass policies. Application predicates are tested. Production needs non-owner role + FORCE RLS.
+Not completely in prototype Ã‘ runtime owner can bypass policies. Application predicates are tested. Production needs non-owner role + FORCE RLS.
 
 **What would you build next?**
 Non-owner forced RLS, immutable journal privileges, managed JWT/TLS rotation, DLQ alarms, PITR restore drills, load testing.
