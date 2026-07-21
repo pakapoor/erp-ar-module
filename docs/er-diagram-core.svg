@@ -1,6 +1,6 @@
-<svg width="100%" viewBox="0 0 680 900" role="img" xmlns="http://www.w3.org/2000/svg">
+<svg width="100%" viewBox="0 0 680 960" role="img" xmlns="http://www.w3.org/2000/svg">
 <title>Core entities ER diagram — ERP AR Module</title>
-<desc>Entity relationship diagram showing 7 core tables: Tenant, Entity, Customer, Invoice, Payment, Journal Entry, GL Account</desc>
+<desc>Entity relationship diagram showing 7 core tables: Tenant, Entity, Customer, Invoice, Payment, Journal Entry, GL Account. Invoice-Payment and GL Account-Journal Entry links are shown as dashed indirect relationships since they resolve through bridge tables (Payment Allocation, Journal Entry Line) covered in the supporting diagram.</desc>
 <defs>
 <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
 <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -65,14 +65,15 @@ text { font-family: sans-serif; fill: #3d3d3a; }
 <text class="ts teal-text" x="110" y="396" text-anchor="middle" dominant-baseline="central">payment_terms</text>
 
 <!-- INVOICE -->
-<rect x="240" y="300" width="200" height="160" rx="8" stroke-width="0.5" class="coral-fill"/>
+<rect x="240" y="300" width="200" height="180" rx="8" stroke-width="0.5" class="coral-fill"/>
 <text class="th coral-text" x="340" y="328" text-anchor="middle" dominant-baseline="central">Invoice</text>
 <text class="ts coral-text" x="340" y="348" text-anchor="middle" dominant-baseline="central">id, tenant_id FK</text>
-<text class="ts coral-text" x="340" y="364" text-anchor="middle" dominant-baseline="central">entity_id FK</text>
-<text class="ts coral-text" x="340" y="380" text-anchor="middle" dominant-baseline="central">customer_id FK</text>
-<text class="ts coral-text" x="340" y="396" text-anchor="middle" dominant-baseline="central">status, currency</text>
-<text class="ts coral-text" x="340" y="412" text-anchor="middle" dominant-baseline="central">total_amount</text>
+<text class="ts coral-text" x="340" y="364" text-anchor="middle" dominant-baseline="central">entity_id FK, customer_id FK</text>
+<text class="ts coral-text" x="340" y="380" text-anchor="middle" dominant-baseline="central">period_id FK</text>
+<text class="ts coral-text" x="340" y="396" text-anchor="middle" dominant-baseline="central">status, version, currency</text>
+<text class="ts coral-text" x="340" y="412" text-anchor="middle" dominant-baseline="central">total_amount, balance_amount</text>
 <text class="ts coral-text" x="340" y="428" text-anchor="middle" dominant-baseline="central">created_by, approved_by</text>
+<text class="ts coral-text" x="340" y="444" text-anchor="middle" dominant-baseline="central">rejection_reason (DRAFT on reject)</text>
 
 <!-- Customer to Invoice -->
 <path d="M200 360 L240 360" stroke="#993C1D" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
@@ -86,51 +87,54 @@ text { font-family: sans-serif; fill: #3d3d3a; }
 <text class="ts teal-text" x="570" y="380" text-anchor="middle" dominant-baseline="central">account_code</text>
 <text class="ts teal-text" x="570" y="396" text-anchor="middle" dominant-baseline="central">account_name</text>
 
-<!-- Invoice to Payment -->
-<path d="M340 460 L340 530" stroke="#993C1D" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
-<text class="ts" x="350" y="497" dominant-baseline="central">1:N</text>
+<!-- Invoice to Payment: indirect, resolves through Payment Allocation bridge table (see supporting diagram) -->
+<path d="M340 480 L340 550" stroke="#993C1D" stroke-width="0.5" stroke-dasharray="4 3" fill="none" marker-end="url(#arrow)"/>
+<text class="ts" x="350" y="517" dominant-baseline="central">M:N via</text>
+<text class="ts" x="350" y="531" dominant-baseline="central">allocation</text>
 
-<!-- Invoice to Journal Entry -->
-<path d="M200 420 L200 590 L240 590" stroke="#993C1D" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
-<text class="ts" x="205" y="510" dominant-baseline="central">1:N</text>
+<!-- Invoice to Journal Entry (polymorphic reference_type/reference_id, not a DB FK) -->
+<path d="M200 440 L200 610 L240 610" stroke="#993C1D" stroke-width="0.5" stroke-dasharray="4 3" fill="none" marker-end="url(#arrow)"/>
+<text class="ts" x="205" y="527" dominant-baseline="central">1:N (poly)</text>
 
 <!-- PAYMENT -->
-<rect x="240" y="530" width="200" height="120" rx="8" stroke-width="0.5" class="amber-fill"/>
-<text class="th amber-text" x="340" y="558" text-anchor="middle" dominant-baseline="central">Payment</text>
-<text class="ts amber-text" x="340" y="578" text-anchor="middle" dominant-baseline="central">id, tenant_id FK</text>
-<text class="ts amber-text" x="340" y="594" text-anchor="middle" dominant-baseline="central">customer_id FK</text>
-<text class="ts amber-text" x="340" y="610" text-anchor="middle" dominant-baseline="central">amount, currency</text>
-<text class="ts amber-text" x="340" y="626" text-anchor="middle" dominant-baseline="central">payment_reference</text>
-<text class="ts amber-text" x="340" y="642" text-anchor="middle" dominant-baseline="central">idempotency_key</text>
+<rect x="240" y="550" width="200" height="120" rx="8" stroke-width="0.5" class="amber-fill"/>
+<text class="th amber-text" x="340" y="578" text-anchor="middle" dominant-baseline="central">Payment</text>
+<text class="ts amber-text" x="340" y="598" text-anchor="middle" dominant-baseline="central">id, tenant_id FK</text>
+<text class="ts amber-text" x="340" y="614" text-anchor="middle" dominant-baseline="central">customer_id FK</text>
+<text class="ts amber-text" x="340" y="630" text-anchor="middle" dominant-baseline="central">amount, currency</text>
+<text class="ts amber-text" x="340" y="646" text-anchor="middle" dominant-baseline="central">payment_reference</text>
+<text class="ts amber-text" x="340" y="662" text-anchor="middle" dominant-baseline="central">idempotency_key</text>
 
-<!-- Payment to Journal Entry -->
-<path d="M340 650 L340 720" stroke="#BA7517" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
-<text class="ts" x="350" y="687" dominant-baseline="central">1:N</text>
+<!-- Payment to Journal Entry (polymorphic reference_type/reference_id, not a DB FK) -->
+<path d="M340 670 L340 740" stroke="#BA7517" stroke-width="0.5" stroke-dasharray="4 3" fill="none" marker-end="url(#arrow)"/>
+<text class="ts" x="350" y="707" dominant-baseline="central">1:N (poly)</text>
 
-<!-- GL Account to Journal Entry -->
-<path d="M480 360 L570 360 L570 720 L440 720" stroke="#185FA5" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
-<text class="ts" x="575" y="540" dominant-baseline="central">1:N</text>
+<!-- GL Account to Journal Entry: indirect, resolves through Journal Entry Line (see supporting diagram) -->
+<path d="M480 380 L570 380 L570 740 L440 740" stroke="#185FA5" stroke-width="0.5" stroke-dasharray="4 3" fill="none" marker-end="url(#arrow)"/>
+<text class="ts" x="575" y="560" dominant-baseline="central">1:N via</text>
+<text class="ts" x="575" y="574" dominant-baseline="central">JE line</text>
 
 <!-- JOURNAL ENTRY -->
-<rect x="240" y="720" width="200" height="140" rx="8" stroke-width="0.5" class="blue-fill"/>
-<text class="th blue-text" x="340" y="748" text-anchor="middle" dominant-baseline="central">Journal entry</text>
-<text class="ts blue-text" x="340" y="768" text-anchor="middle" dominant-baseline="central">id, tenant_id FK</text>
-<text class="ts blue-text" x="340" y="784" text-anchor="middle" dominant-baseline="central">reference_type</text>
-<text class="ts blue-text" x="340" y="800" text-anchor="middle" dominant-baseline="central">reference_id</text>
-<text class="ts blue-text" x="340" y="816" text-anchor="middle" dominant-baseline="central">document_date, entry_date</text>
-<text class="ts blue-text" x="340" y="832" text-anchor="middle" dominant-baseline="central">period_id, adjusts_period_id</text>
-<text class="ts blue-text" x="340" y="848" text-anchor="middle" dominant-baseline="central">debit = credit always</text>
+<rect x="240" y="740" width="200" height="140" rx="8" stroke-width="0.5" class="blue-fill"/>
+<text class="th blue-text" x="340" y="768" text-anchor="middle" dominant-baseline="central">Journal entry</text>
+<text class="ts blue-text" x="340" y="788" text-anchor="middle" dominant-baseline="central">id, tenant_id FK</text>
+<text class="ts blue-text" x="340" y="804" text-anchor="middle" dominant-baseline="central">reference_type</text>
+<text class="ts blue-text" x="340" y="820" text-anchor="middle" dominant-baseline="central">reference_id</text>
+<text class="ts blue-text" x="340" y="836" text-anchor="middle" dominant-baseline="central">document_date, entry_date</text>
+<text class="ts blue-text" x="340" y="852" text-anchor="middle" dominant-baseline="central">period_id, adjusts_period_id</text>
+<text class="ts blue-text" x="340" y="868" text-anchor="middle" dominant-baseline="central">debit = credit always</text>
 
 <!-- Legend -->
-<rect x="20" y="870" width="12" height="12" rx="2" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
-<text class="ts" x="38" y="878" dominant-baseline="central">Foundation</text>
-<rect x="130" y="870" width="12" height="12" rx="2" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
-<text class="ts" x="148" y="878" dominant-baseline="central">Master data</text>
-<rect x="250" y="870" width="12" height="12" rx="2" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
-<text class="ts" x="268" y="878" dominant-baseline="central">Invoice</text>
-<rect x="330" y="870" width="12" height="12" rx="2" fill="#FAEEDA" stroke="#BA7517" stroke-width="0.5"/>
-<text class="ts" x="348" y="878" dominant-baseline="central">Payment</text>
-<rect x="420" y="870" width="12" height="12" rx="2" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
-<text class="ts" x="438" y="878" dominant-baseline="central">Accounting</text>
+<rect x="20" y="910" width="12" height="12" rx="2" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text class="ts" x="38" y="918" dominant-baseline="central">Foundation</text>
+<rect x="130" y="910" width="12" height="12" rx="2" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text class="ts" x="148" y="918" dominant-baseline="central">Master data</text>
+<rect x="250" y="910" width="12" height="12" rx="2" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
+<text class="ts" x="268" y="918" dominant-baseline="central">Invoice</text>
+<rect x="330" y="910" width="12" height="12" rx="2" fill="#FAEEDA" stroke="#BA7517" stroke-width="0.5"/>
+<text class="ts" x="348" y="918" dominant-baseline="central">Payment</text>
+<rect x="420" y="910" width="12" height="12" rx="2" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text class="ts" x="438" y="918" dominant-baseline="central">Accounting</text>
+<text class="ts" x="20" y="940" dominant-baseline="central" font-style="italic">- - - = indirect (bridge table or polymorphic reference, not a DB foreign key)</text>
 
 </svg>

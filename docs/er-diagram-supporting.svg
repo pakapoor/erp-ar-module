@@ -81,13 +81,18 @@ text { font-family: sans-serif; fill: #3d3d3a; }
 <path d="M90 56 L90 80 L460 80 L460 160" stroke="#993C1D" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
 <text class="ts" x="466" y="120" dominant-baseline="central">1:N</text>
 
+<!-- Credit Memo → Invoice (replacement_invoice_id, optional self-ref via Invoice) -->
+<path d="M160 38 L360 38 L360 145 L500 145 L500 160" stroke="#993C1D" stroke-width="0.5" stroke-dasharray="4 3" fill="none" marker-end="url(#arrow)"/>
+<text class="ts coral-text" x="366" y="135" dominant-baseline="central">optional replacement</text>
+
 <!-- Credit Memo -->
-<rect x="390" y="160" width="160" height="130" rx="8" stroke-width="0.5" class="gray-fill"/>
-<text class="th gray-text" x="470" y="188" text-anchor="middle" dominant-baseline="central">Credit memo</text>
-<text class="ts gray-text" x="470" y="208" text-anchor="middle" dominant-baseline="central">id, tenant_id FK</text>
-<text class="ts gray-text" x="470" y="224" text-anchor="middle" dominant-baseline="central">invoice_id FK</text>
-<text class="ts gray-text" x="470" y="240" text-anchor="middle" dominant-baseline="central">reason_code</text>
-<text class="ts gray-text" x="470" y="256" text-anchor="middle" dominant-baseline="central">amount, status</text>
+<rect x="390" y="160" width="160" height="150" rx="8" stroke-width="0.5" class="gray-fill"/>
+<text class="th gray-text" x="470" y="184" text-anchor="middle" dominant-baseline="central">Credit memo</text>
+<text class="ts gray-text" x="470" y="202" text-anchor="middle" dominant-baseline="central">id, tenant_id FK</text>
+<text class="ts gray-text" x="470" y="216" text-anchor="middle" dominant-baseline="central">invoice_id FK</text>
+<text class="ts gray-text" x="470" y="230" text-anchor="middle" dominant-baseline="central">replacement_invoice_id FK</text>
+<text class="ts gray-text" x="470" y="244" text-anchor="middle" dominant-baseline="central">reason_code</text>
+<text class="ts gray-text" x="470" y="258" text-anchor="middle" dominant-baseline="central">amount, status</text>
 <text class="ts gray-text" x="470" y="272" text-anchor="middle" dominant-baseline="central">approved_by FK</text>
 
 <!-- ============================================================ -->

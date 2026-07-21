@@ -18,7 +18,7 @@
 | Tenant | ERP customer -- owns all data, one contract |
 | Entity | Legal subsidiary within a tenant |
 | Customer | External company being invoiced |
-| Invoice | The bill sent to customer |
+| Invoice | The bill sent to customer; `rejection_reason` set (status returns to DRAFT) when an approver rejects instead of approving |
 | Invoice Line Item | Individual line on an invoice |
 | Payment | Money received from customer |
 | Journal Entry | Accounting record of financial event |
@@ -34,7 +34,7 @@
 | Audit Log | Immutable record of all changes (SOX) |
 | Accounting Period | Month/year close tracking |
 | Exchange Rate | Daily currency conversion rates |
-| Credit Memo | Correction document against an invoice |
+| Credit Memo | Correction document against an invoice; `replacement_invoice_id` optionally links to a reissued invoice |
 | AR Aging (materialized view) | Current derived snapshot by tenant, entity, and customer; refreshed every 5 minutes |
 | Idempotency Key | Tenant- and endpoint-scoped write claim with request hash and cached response |
 | Delivery Outbox | Durable invoice-delivery event and DB->SQS publication lifecycle |
@@ -45,6 +45,12 @@
 ## ER Diagram -- Core Entities
 
 ![Core entities ER diagram](er-diagram-core.svg)
+
+Dashed lines mark relationships that are not a direct foreign key: Invoice-Payment
+resolves many-to-many through the Payment Allocation bridge table, Invoice/Payment-
+Journal Entry is a polymorphic `reference_type`/`reference_id` pair rather than an
+FK, and GL Account-Journal Entry resolves through Journal Entry Line. See the
+supporting diagram for all three intermediate tables.
 
 ---
 
@@ -79,6 +85,12 @@ Key design decisions in the schema:
 - Audit triggers fire automatically -- cannot be bypassed by application code
 - Journal entries are immutable -- no UPDATE/DELETE ever
 - SOX segregation enforced via CHECK constraint: invoice creator != approver
+  (the same constraint covers rejection, since reject/approve share one endpoint)
+- Rejection reuses the invoice row rather than a separate table: `approve`
+  with `action: REJECT` returns status to DRAFT, stores `rejection_reason`,
+  and bumps `version`; there is no dedicated `rejected_by`/`rejected_at`
+  column, so who rejected and when live only in `audit_log`. A subsequent
+  PATCH (creator only, DRAFT only) clears `rejection_reason` on save
 - Period close enforced via DB triggers -- CLOSED requires an audited reopen;
   LOCKED is irreversible, and adjustments post to a current OPEN period while
   preserving the original document date
@@ -102,4 +114,23 @@ Key design decisions in the schema:
 ---
 
 ## Key Design Decisions
-Coming soon
+
+- **No dedicated Rejection table.** Reject is a state on Invoice
+  (`rejection_reason` + status back to DRAFT + version bump), not a new
+  entity, because a rejected invoice is the same draft being corrected, not
+  a new financial fact. The identity of the rejector is not a first-class
+  column; it is recovered from `audit_log` if needed.
+- **Payment does not FK to Invoice directly.** A single payment can settle
+  multiple invoices (or partially settle one), so the relationship is
+  many-to-many through `payment_allocation`, which also carries the
+  per-invoice FX gain/loss.
+- **Journal Entry links to its source via a polymorphic reference, not a
+  set of nullable FKs.** `reference_type` + `reference_id` avoids one
+  nullable FK column per possible source (invoice, payment, credit memo,
+  write-off, manual, prior-period adjustment, FX revaluation) and keeps
+  the journal table source-agnostic; `idx_je_reference` makes the reverse
+  lookup indexed.
+- **GL Account never appears on Journal Entry itself.** Each entry can
+  touch multiple accounts (one debit, N credits or vice versa), so the
+  account reference lives on `journal_entry_line`, keeping the header
+  immutable and the lines the only place account-level amounts exist.
