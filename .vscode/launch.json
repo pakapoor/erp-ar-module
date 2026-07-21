@@ -17,8 +17,7 @@
         }
       ],
       "jinja": true,
-      "justMyCode": true,
-      "preLaunchTask": "Start Debug Stack"
+      "justMyCode": true
     }
   ]
 }
