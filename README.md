@@ -43,6 +43,8 @@ Raise invoice ? Approve ? Post to GL ? Receive payment ? Age receivables ? Audit
 
 ## Architecture
 
+![System Architecture](docs/architecture.svg)
+
 ```
 Client
   ? Envoy L7 Gateway      (JWT validation, rate limiting, trace IDs)
