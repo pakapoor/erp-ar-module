@@ -62,18 +62,21 @@ supporting diagram for all three intermediate tables.
 
 ## Table Schemas
 
-Full schema begins in [migrations/001_initial_schema.sql](../migrations/001_initial_schema.sql);
-the delivery outbox is added by
-[migrations/004_delivery_outbox.sql](../migrations/004_delivery_outbox.sql) and
-extended with SQS publication metadata by
-[migration 009](../migrations/009_sqs_delivery_pipeline.sql), while
-the FX import/provenance foundation by
-[migrations/006_fx_rate_ingestion.sql](../migrations/006_fx_rate_ingestion.sql),
-base-currency aging by migration 007, and base-only realized-FX journal lines
-by migration 008.
+Full schema lives in [migrations/001_init.sql](../migrations/001_init.sql) --
+a single consolidated file representing the complete current schema (tables,
+constraints, indexes, triggers), not a sequence of incremental deltas. It
+grew from an initial schema through several rounds: a transactional delivery
+outbox for invoice delivery (later extended with SQS publication metadata),
+an FX import/provenance foundation (`fx_import_job`, rate provenance and
+approval fields, immutable supersession, transaction-to-rate references),
+base-currency aging, base-only realized-FX journal lines, and a fix allowing
+`VOID` as a journal entry reference type. pg_cron setup (the AR aging refresh
+schedule and the FX import trigger) is a separate script,
+[migrations/003_setup_pg_cron.sh](../migrations/003_setup_pg_cron.sh), since
+it targets the `postgres` maintenance database rather than `erp_db`.
 
 The completed V1 FX extension is specified in
-[FX Rate Ingestion and Multi-Currency Design](fx-rate-design.md). Migration 006
+[FX Rate Ingestion and Multi-Currency Design](fx-rate-design.md). The schema
 implements `fx_import_job`, rate provenance/approval fields, immutable
 supersession, and transaction-to-rate references. APIs snapshot transaction and
 base values; payment allocations retain payment-rate value, AR carrying value

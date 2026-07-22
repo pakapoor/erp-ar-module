@@ -1,23 +1,28 @@
 -- ============================================================
--- ERP AR Module — Initial Schema
--- Migration: 001_initial_schema.sql
+-- ERP AR Module — Consolidated Schema
+-- migrations/init.sql
 -- ============================================================
+-- Single file representing the complete current schema state.
+-- Supersedes the incremental 001-010 migration files; this is
+-- the final state, not a sequence of deltas.
+--
 -- Assumptions:
--- - PostgreSQL 14+
--- - UUID extension enabled
+-- - PostgreSQL 14+ (pg_cron extras assume 16, see 003_setup_pg_cron.sh)
 -- - All monetary amounts stored as DECIMAL(20,4)
 -- - All timestamps in UTC
 -- - Row Level Security enforced at DB level
 -- - GAAP accrual accounting standard
+-- - Status/type "enums" are VARCHAR + CHECK constraints — this schema
+--   never uses native Postgres ENUM types
 -- ============================================================
 
--- Enable UUID generation
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ============================================================
--- HELPER FUNCTION: audit trigger
--- Automatically writes to audit_log on any table change
+-- HELPER FUNCTIONS
 -- ============================================================
+
+-- Writes to audit_log on any table change. Attached per-table below.
 CREATE OR REPLACE FUNCTION write_audit_log()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -31,9 +36,9 @@ BEGIN
     TG_TABLE_NAME,
     COALESCE(NEW.id, OLD.id),
     TG_OP,
-    CASE WHEN TG_OP = 'DELETE' OR TG_OP = 'UPDATE' 
+    CASE WHEN TG_OP = 'DELETE' OR TG_OP = 'UPDATE'
          THEN row_to_json(OLD) ELSE NULL END,
-    CASE WHEN TG_OP = 'INSERT' OR TG_OP = 'UPDATE' 
+    CASE WHEN TG_OP = 'INSERT' OR TG_OP = 'UPDATE'
          THEN row_to_json(NEW) ELSE NULL END,
     current_setting('app.current_user_id', true)::uuid,
     NOW()
@@ -42,10 +47,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- ============================================================
--- HELPER FUNCTION: period close check
--- Prevents posting to closed/locked periods
--- ============================================================
+-- Prevents posting to closed/locked periods. Invoice creation stays DRAFT;
+-- the period is only validated (and stamped onto the row) on DRAFT -> APPROVED.
 CREATE OR REPLACE FUNCTION check_period_open()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -98,8 +101,29 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION check_period_transition()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF OLD.status = 'LOCKED' AND NEW.status IS DISTINCT FROM OLD.status THEN
+    RAISE EXCEPTION 'LOCKED accounting periods cannot be reopened or changed';
+  END IF;
+
+  IF OLD.status = 'OPEN' AND NEW.status = 'LOCKED' THEN
+    RAISE EXCEPTION 'An OPEN period must be CLOSED before it can be LOCKED';
+  END IF;
+
+  IF OLD.status = 'CLOSED' AND NEW.status = 'OPEN'
+     AND (NEW.reopened_by IS NULL OR NEW.reopened_at IS NULL
+          OR NULLIF(BTRIM(NEW.reopen_reason), '') IS NULL) THEN
+    RAISE EXCEPTION 'Reopening a CLOSED period requires actor, timestamp, and reason';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- ============================================================
--- TABLE 1: TENANT
+-- TABLE: TENANT
 -- Top level — one per ERP customer
 -- ============================================================
 CREATE TABLE tenant (
@@ -117,9 +141,8 @@ CREATE TABLE tenant (
 COMMENT ON TABLE tenant IS 'Top level entity — one per ERP customer';
 
 -- ============================================================
--- TABLE 2: ENTITY
--- Legal subsidiary within a tenant
--- Self-referential for hierarchy
+-- TABLE: ENTITY
+-- Legal subsidiary within a tenant. Self-referential for hierarchy.
 -- ============================================================
 CREATE TABLE entity (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -137,13 +160,12 @@ CREATE TABLE entity (
 CREATE INDEX idx_entity_tenant ON entity(tenant_id);
 CREATE INDEX idx_entity_parent ON entity(parent_entity_id);
 
--- RLS
 ALTER TABLE entity ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON entity
   USING (tenant_id = current_setting('app.tenant_id')::uuid);
 
 -- ============================================================
--- TABLE 3: GL ACCOUNT
+-- TABLE: GL ACCOUNT
 -- Chart of accounts per entity
 -- ============================================================
 CREATE TABLE gl_account (
@@ -171,9 +193,8 @@ CREATE POLICY tenant_isolation ON gl_account
   USING (tenant_id = current_setting('app.tenant_id')::uuid);
 
 -- ============================================================
--- TABLE 4: USER
--- System users with roles
--- Self-referential for manager hierarchy
+-- TABLE: USER
+-- System users with roles. Self-referential for manager hierarchy.
 -- ============================================================
 CREATE TABLE app_user (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -206,10 +227,13 @@ ALTER TABLE app_user ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON app_user
   USING (tenant_id = current_setting('app.tenant_id')::uuid);
 
+COMMENT ON COLUMN app_user.roles IS
+  'Array of roles. SOX requires invoice creator != approver (enforced in invoice.check constraint).';
+
 -- ============================================================
--- TABLE 5: CUSTOMER
--- External companies being invoiced
--- PII fields marked for KMS encryption at app layer
+-- TABLE: CUSTOMER
+-- External companies being invoiced. PII fields marked for KMS
+-- encryption at app layer.
 -- ============================================================
 CREATE TABLE customer (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -244,34 +268,133 @@ ALTER TABLE customer ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON customer
   USING (tenant_id = current_setting('app.tenant_id')::uuid);
 
--- Audit trigger
 CREATE TRIGGER customer_audit
   AFTER INSERT OR UPDATE OR DELETE ON customer
   FOR EACH ROW EXECUTE FUNCTION write_audit_log();
 
 -- ============================================================
--- TABLE 6: EXCHANGE RATE
--- Daily rates fetched at 2am
+-- TABLE: FX IMPORT JOB
+-- Durable system job for fetching one provider FX rate batch.
+-- Not tenant-facing.
+-- ============================================================
+CREATE TABLE fx_import_job (
+  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider                VARCHAR(30) NOT NULL DEFAULT 'ECB',
+  requested_date          DATE NOT NULL,
+  provider_effective_date DATE,
+  status                  VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+  attempt_count           INTEGER NOT NULL DEFAULT 0,
+  max_attempts            INTEGER NOT NULL DEFAULT 8,
+  next_attempt_at         TIMESTAMP NOT NULL DEFAULT NOW(),
+  locked_at               TIMESTAMP,
+  completed_at            TIMESTAMP,
+  raw_response_hash       CHAR(64),
+  last_error              TEXT,
+  created_at              TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at              TIMESTAMP NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT fx_import_job_provider_date_unique
+    UNIQUE (provider, requested_date),
+  CONSTRAINT fx_import_job_status_valid CHECK (
+    status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'RETRY', 'DEAD')
+  ),
+  CONSTRAINT fx_import_job_attempts_valid CHECK (
+    attempt_count >= 0 AND max_attempts > 0 AND attempt_count <= max_attempts
+  ),
+  CONSTRAINT fx_import_job_hash_valid CHECK (
+    raw_response_hash IS NULL OR raw_response_hash ~ '^[0-9a-f]{64}$'
+  )
+);
+
+CREATE INDEX idx_fx_import_job_claim
+  ON fx_import_job(status, next_attempt_at, created_at);
+
+COMMENT ON TABLE fx_import_job IS
+  'Durable system job for fetching one provider FX batch. Not tenant-facing.';
+
+-- ============================================================
+-- TABLE: EXCHANGE RATE
+-- Daily reference rates ingested from a provider (ECB), plus
+-- manual overrides. Approved rates are immutable; corrections
+-- supersede rather than mutate.
 -- ============================================================
 CREATE TABLE exchange_rate (
-  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id         UUID NOT NULL REFERENCES tenant(id),
-  from_currency     CHAR(3) NOT NULL,
-  to_currency       CHAR(3) NOT NULL,
-  rate              DECIMAL(20,8) NOT NULL,
-  effective_date    DATE NOT NULL,
-  source            VARCHAR(50) DEFAULT 'XE',  -- XE/Bloomberg/RBI
-  created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
+  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id               UUID NOT NULL REFERENCES tenant(id),
+  from_currency           CHAR(3) NOT NULL,
+  to_currency             CHAR(3) NOT NULL,
+  rate                    DECIMAL(20,8) NOT NULL,
+  effective_date          DATE NOT NULL,
+  source                  VARCHAR(50) NOT NULL DEFAULT 'XE',  -- XE/Bloomberg/RBI/ECB/LEGACY
+  rate_type               VARCHAR(30) NOT NULL DEFAULT 'DAILY_REFERENCE',
+  status                  VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+  provider_effective_date DATE NOT NULL,
+  fetched_at              TIMESTAMP NOT NULL,
+  raw_quote_currency      CHAR(3),
+  raw_quote_rate          DECIMAL(20,8),
+  is_derived              BOOLEAN NOT NULL DEFAULT FALSE,
+  raw_response_hash       CHAR(64),
+  import_job_id           UUID REFERENCES fx_import_job(id),
+  is_manual_override      BOOLEAN NOT NULL DEFAULT FALSE,
+  approved_by             UUID REFERENCES app_user(id),
+  approved_at             TIMESTAMP,
+  supersedes_rate_id      UUID REFERENCES exchange_rate(id),
+  created_at              TIMESTAMP NOT NULL DEFAULT NOW(),
 
   CONSTRAINT exchange_rate_positive CHECK (rate > 0),
-  CONSTRAINT exchange_rate_unique UNIQUE (tenant_id, from_currency, to_currency, effective_date)
+  CONSTRAINT exchange_rate_status_valid CHECK (
+    status IN ('PENDING', 'APPROVED', 'REJECTED', 'SUPERSEDED')
+  ),
+  CONSTRAINT exchange_rate_type_valid CHECK (
+    rate_type IN ('DAILY_REFERENCE', 'MANUAL')
+  ),
+  CONSTRAINT exchange_rate_currency_pair_valid CHECK (
+    from_currency ~ '^[A-Z]{3}$'
+    AND to_currency ~ '^[A-Z]{3}$'
+    AND from_currency <> to_currency
+  ),
+  CONSTRAINT exchange_rate_raw_quote_positive CHECK (
+    raw_quote_rate IS NULL OR raw_quote_rate > 0
+  ),
+  CONSTRAINT exchange_rate_hash_valid CHECK (
+    raw_response_hash IS NULL OR raw_response_hash ~ '^[0-9a-f]{64}$'
+  ),
+  CONSTRAINT exchange_rate_approval_valid CHECK (
+    status <> 'APPROVED' OR approved_at IS NOT NULL
+  ),
+  CONSTRAINT exchange_rate_manual_approval_valid CHECK (
+    NOT is_manual_override OR status <> 'APPROVED' OR approved_by IS NOT NULL
+  ),
+  CONSTRAINT exchange_rate_supersedes_other CHECK (
+    supersedes_rate_id IS NULL OR supersedes_rate_id <> id
+  )
 );
 
 CREATE INDEX idx_exchange_rate_tenant ON exchange_rate(tenant_id);
-CREATE INDEX idx_exchange_rate_lookup ON exchange_rate(tenant_id, from_currency, to_currency, effective_date DESC);
+CREATE INDEX idx_exchange_rate_lookup
+  ON exchange_rate(tenant_id, from_currency, to_currency, rate_type, effective_date DESC);
+CREATE UNIQUE INDEX uq_exchange_rate_approved
+  ON exchange_rate(tenant_id, from_currency, to_currency, effective_date, rate_type)
+  WHERE status = 'APPROVED';
+CREATE UNIQUE INDEX uq_exchange_rate_import_pair
+  ON exchange_rate(import_job_id, tenant_id, from_currency, to_currency)
+  WHERE import_job_id IS NOT NULL;
+
+ALTER TABLE exchange_rate ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON exchange_rate
+  USING (
+    tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid
+  )
+  WITH CHECK (
+    tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid
+  );
+
+CREATE TRIGGER exchange_rate_audit
+  AFTER INSERT OR UPDATE OR DELETE ON exchange_rate
+  FOR EACH ROW EXECUTE FUNCTION write_audit_log();
 
 -- ============================================================
--- TABLE 7: ACCOUNTING PERIOD
+-- TABLE: ACCOUNTING PERIOD
 -- Month/year close tracking
 -- ============================================================
 CREATE TABLE accounting_period (
@@ -304,37 +427,16 @@ CREATE TABLE accounting_period (
   CONSTRAINT period_unique UNIQUE (tenant_id, entity_id, start_date)
 );
 
-CREATE OR REPLACE FUNCTION check_period_transition()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF OLD.status = 'LOCKED' AND NEW.status IS DISTINCT FROM OLD.status THEN
-    RAISE EXCEPTION 'LOCKED accounting periods cannot be reopened or changed';
-  END IF;
-
-  IF OLD.status = 'OPEN' AND NEW.status = 'LOCKED' THEN
-    RAISE EXCEPTION 'An OPEN period must be CLOSED before it can be LOCKED';
-  END IF;
-
-  IF OLD.status = 'CLOSED' AND NEW.status = 'OPEN'
-     AND (NEW.reopened_by IS NULL OR NEW.reopened_at IS NULL
-          OR NULLIF(BTRIM(NEW.reopen_reason), '') IS NULL) THEN
-    RAISE EXCEPTION 'Reopening a CLOSED period requires actor, timestamp, and reason';
-  END IF;
-
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+CREATE INDEX idx_period_tenant ON accounting_period(tenant_id);
+CREATE INDEX idx_period_status ON accounting_period(tenant_id, entity_id, status);
+CREATE INDEX idx_period_dates ON accounting_period(tenant_id, entity_id, start_date, end_date);
 
 CREATE TRIGGER accounting_period_transition_check
   BEFORE UPDATE OF status ON accounting_period
   FOR EACH ROW EXECUTE FUNCTION check_period_transition();
 
-CREATE INDEX idx_period_tenant ON accounting_period(tenant_id);
-CREATE INDEX idx_period_status ON accounting_period(tenant_id, entity_id, status);
-CREATE INDEX idx_period_dates ON accounting_period(tenant_id, entity_id, start_date, end_date);
-
 -- ============================================================
--- TABLE 8: INVOICE
+-- TABLE: INVOICE
 -- Heart of the system
 -- ============================================================
 CREATE TABLE invoice (
@@ -351,6 +453,7 @@ CREATE TABLE invoice (
   -- Currency
   transaction_currency  CHAR(3) NOT NULL,
   exchange_rate         DECIMAL(20,8) NOT NULL DEFAULT 1,
+  exchange_rate_id      UUID REFERENCES exchange_rate(id),
   base_currency         CHAR(3) NOT NULL,
   -- Amounts (transaction currency)
   subtotal_amount       DECIMAL(20,4) NOT NULL DEFAULT 0,
@@ -362,6 +465,7 @@ CREATE TABLE invoice (
   base_total_amount     DECIMAL(20,4) NOT NULL DEFAULT 0,
   -- Outstanding balance
   balance_amount        DECIMAL(20,4) NOT NULL DEFAULT 0,
+  base_balance_amount   DECIMAL(20,4) NOT NULL DEFAULT 0,
   -- Dates
   invoice_date          DATE NOT NULL DEFAULT CURRENT_DATE,
   due_date              DATE NOT NULL,
@@ -379,7 +483,6 @@ CREATE TABLE invoice (
   created_at            TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at            TIMESTAMP NOT NULL DEFAULT NOW(),
 
-  -- Constraints
   CONSTRAINT invoice_status_valid CHECK (
     status IN ('DRAFT','APPROVED','SENT','PARTIALLY_PAID','PAID','VOID','WRITTEN_OFF')
   ),
@@ -390,6 +493,9 @@ CREATE TABLE invoice (
   CONSTRAINT invoice_balance_valid CHECK (
     balance_amount >= 0 AND balance_amount <= total_amount
   ),
+  CONSTRAINT invoice_base_balance_valid CHECK (
+    base_balance_amount >= 0 AND base_balance_amount <= base_total_amount
+  ),
   CONSTRAINT invoice_due_date_valid CHECK (due_date >= invoice_date),
   -- SOX: creator and approver must be different
   CONSTRAINT invoice_sox_segregation CHECK (
@@ -399,6 +505,13 @@ CREATE TABLE invoice (
   CONSTRAINT invoice_intercompany_valid CHECK (
     (is_intercompany = FALSE) OR
     (is_intercompany = TRUE AND receiver_entity_id IS NOT NULL)
+  ),
+  -- FX: transaction currency == base currency implies rate 1 and no rate
+  -- reference; a differing currency requires a locked exchange_rate_id
+  CONSTRAINT invoice_fx_rate_reference_valid CHECK (
+    (transaction_currency = base_currency AND exchange_rate = 1)
+    OR
+    (transaction_currency <> base_currency AND exchange_rate_id IS NOT NULL)
   )
 );
 
@@ -408,23 +521,30 @@ CREATE INDEX idx_invoice_customer ON invoice(customer_id);
 CREATE INDEX idx_invoice_status ON invoice(tenant_id, status);
 CREATE INDEX idx_invoice_due_date ON invoice(tenant_id, due_date);
 CREATE INDEX idx_invoice_date ON invoice(tenant_id, invoice_date);
+CREATE INDEX idx_invoice_exchange_rate
+  ON invoice(exchange_rate_id)
+  WHERE exchange_rate_id IS NOT NULL;
 
 ALTER TABLE invoice ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON invoice
   USING (tenant_id = current_setting('app.tenant_id')::uuid);
 
--- Period close check
 CREATE TRIGGER invoice_period_check
   BEFORE UPDATE OF status ON invoice
   FOR EACH ROW EXECUTE FUNCTION check_period_open();
 
--- Audit trigger
 CREATE TRIGGER invoice_audit
   AFTER INSERT OR UPDATE OR DELETE ON invoice
   FOR EACH ROW EXECUTE FUNCTION write_audit_log();
 
+COMMENT ON COLUMN invoice.exchange_rate IS
+  'Rate locked on invoice_date. FX gain/loss calculated on payment vs this rate.';
+
+COMMENT ON COLUMN invoice.is_intercompany IS
+  'TRUE when sender and receiver are both entities within same tenant. Eliminated in consolidated reports.';
+
 -- ============================================================
--- TABLE 9: INVOICE LINE ITEM
+-- TABLE: INVOICE LINE ITEM
 -- Individual lines on an invoice
 -- ============================================================
 CREATE TABLE invoice_line_item (
@@ -462,7 +582,7 @@ CREATE POLICY tenant_isolation ON invoice_line_item
   USING (tenant_id = current_setting('app.tenant_id')::uuid);
 
 -- ============================================================
--- TABLE 10: PAYMENT
+-- TABLE: PAYMENT
 -- Money received from customer
 -- ============================================================
 CREATE TABLE payment (
@@ -475,12 +595,15 @@ CREATE TABLE payment (
   -- Currency
   transaction_currency  CHAR(3) NOT NULL,
   exchange_rate         DECIMAL(20,8) NOT NULL DEFAULT 1,
+  exchange_rate_id      UUID REFERENCES exchange_rate(id),
   base_currency         CHAR(3) NOT NULL,
   -- Amounts
   amount                DECIMAL(20,4) NOT NULL,
   base_amount           DECIMAL(20,4) NOT NULL,
   allocated_amount      DECIMAL(20,4) NOT NULL DEFAULT 0,
   unallocated_amount    DECIMAL(20,4) NOT NULL,
+  base_allocated_amount   DECIMAL(20,4) NOT NULL DEFAULT 0,
+  base_unallocated_amount DECIMAL(20,4) NOT NULL DEFAULT 0,
   -- Payment details
   payment_method        VARCHAR(50) NOT NULL,  -- NEFT/RTGS/SWIFT/CHEQUE
   status                VARCHAR(30) NOT NULL DEFAULT 'PENDING',
@@ -505,7 +628,17 @@ CREATE TABLE payment (
   CONSTRAINT payment_unallocated_valid CHECK (
     unallocated_amount = amount - allocated_amount
   ),
+  CONSTRAINT payment_base_allocation_valid CHECK (
+    base_allocated_amount >= 0
+    AND base_unallocated_amount >= 0
+    AND base_amount = base_allocated_amount + base_unallocated_amount
+  ),
   CONSTRAINT payment_currency_valid CHECK (char_length(transaction_currency) = 3),
+  CONSTRAINT payment_fx_rate_reference_valid CHECK (
+    (transaction_currency = base_currency AND exchange_rate = 1)
+    OR
+    (transaction_currency <> base_currency AND exchange_rate_id IS NOT NULL)
+  ),
   CONSTRAINT payment_reference_unique UNIQUE (tenant_id, customer_id, payment_reference),
   CONSTRAINT payment_idempotency_unique UNIQUE (tenant_id, idempotency_key)
 );
@@ -514,6 +647,9 @@ CREATE INDEX idx_payment_tenant ON payment(tenant_id);
 CREATE INDEX idx_payment_customer ON payment(customer_id);
 CREATE INDEX idx_payment_date ON payment(tenant_id, payment_date);
 CREATE INDEX idx_payment_reference ON payment(tenant_id, payment_reference);
+CREATE INDEX idx_payment_exchange_rate
+  ON payment(exchange_rate_id)
+  WHERE exchange_rate_id IS NOT NULL;
 
 ALTER TABLE payment ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON payment
@@ -523,10 +659,12 @@ CREATE TRIGGER payment_audit
   AFTER INSERT OR UPDATE OR DELETE ON payment
   FOR EACH ROW EXECUTE FUNCTION write_audit_log();
 
+COMMENT ON COLUMN payment.idempotency_key IS
+  'Client-supplied key to prevent duplicate payment processing on retry.';
+
 -- ============================================================
--- TABLE 11: PAYMENT ALLOCATION
--- Bridge table: links payment to invoices
--- Many payments → many invoices
+-- TABLE: PAYMENT ALLOCATION
+-- Bridge table: links payment to invoices. Many payments -> many invoices.
 -- ============================================================
 CREATE TABLE payment_allocation (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -534,13 +672,21 @@ CREATE TABLE payment_allocation (
   payment_id        UUID NOT NULL REFERENCES payment(id),
   invoice_id        UUID NOT NULL REFERENCES invoice(id),
   amount_allocated  DECIMAL(20,4) NOT NULL,
-  -- FX gain/loss (payment rate vs invoice rate)
+  -- FX gain/loss (payment rate vs invoice rate), realized in base currency
   fx_gain_loss      DECIMAL(20,4) NOT NULL DEFAULT 0,
+  base_payment_amount DECIMAL(20,4) NOT NULL DEFAULT 0,
+  base_ar_amount      DECIMAL(20,4) NOT NULL DEFAULT 0,
   created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
   created_by        UUID NOT NULL REFERENCES app_user(id),
 
   CONSTRAINT allocation_amount_positive CHECK (amount_allocated > 0),
-  CONSTRAINT allocation_unique UNIQUE (payment_id, invoice_id)
+  CONSTRAINT allocation_unique UNIQUE (payment_id, invoice_id),
+  CONSTRAINT allocation_base_amounts_valid CHECK (
+    base_payment_amount > 0 AND base_ar_amount > 0
+  ),
+  CONSTRAINT allocation_realized_fx_valid CHECK (
+    fx_gain_loss = base_payment_amount - base_ar_amount
+  )
 );
 
 CREATE INDEX idx_allocation_payment ON payment_allocation(payment_id);
@@ -552,16 +698,16 @@ CREATE POLICY tenant_isolation ON payment_allocation
   USING (tenant_id = current_setting('app.tenant_id')::uuid);
 
 -- ============================================================
--- TABLE 12: JOURNAL ENTRY
--- Immutable accounting record
--- Uses polymorphic reference (reference_type + reference_id)
+-- TABLE: JOURNAL ENTRY
+-- Immutable accounting record. Polymorphic reference
+-- (reference_type + reference_id).
 -- ============================================================
 CREATE TABLE journal_entry (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id         UUID NOT NULL REFERENCES tenant(id),
   entity_id         UUID NOT NULL REFERENCES entity(id),
   period_id         UUID NOT NULL REFERENCES accounting_period(id),
-  reference_type    VARCHAR(50) NOT NULL,  -- INVOICE/PAYMENT/CREDIT_MEMO/MANUAL/ADJUSTMENT
+  reference_type    VARCHAR(50) NOT NULL,
   reference_id      UUID NOT NULL,
   document_date     DATE NOT NULL,
   entry_date        DATE NOT NULL DEFAULT CURRENT_DATE, -- GL posting date
@@ -576,7 +722,7 @@ CREATE TABLE journal_entry (
   created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
 
   CONSTRAINT je_reference_type_valid CHECK (
-    reference_type IN ('INVOICE', 'PAYMENT', 'CREDIT_MEMO', 'WRITE_OFF', 'MANUAL', 'PRIOR_PERIOD_ADJUSTMENT', 'FX_REVALUATION')
+    reference_type IN ('INVOICE', 'PAYMENT', 'CREDIT_MEMO', 'WRITE_OFF', 'VOID', 'MANUAL', 'PRIOR_PERIOD_ADJUSTMENT', 'FX_REVALUATION')
   ),
   CONSTRAINT je_prior_period_adjustment_valid CHECK (
     reference_type <> 'PRIOR_PERIOD_ADJUSTMENT'
@@ -602,10 +748,13 @@ CREATE TRIGGER journal_entry_period_check
   BEFORE INSERT ON journal_entry
   FOR EACH ROW EXECUTE FUNCTION check_journal_period_open();
 
+COMMENT ON TABLE journal_entry IS
+  'Immutable. No UPDATE/DELETE ever. Corrections via reversing entries only. SOX requirement.';
+
 -- ============================================================
--- TABLE 13: JOURNAL ENTRY LINE
--- Individual debit/credit lines
--- Debits must equal credits per journal entry
+-- TABLE: JOURNAL ENTRY LINE
+-- Individual debit/credit lines. Debits must equal credits per
+-- journal entry, in both transaction and base currency.
 -- ============================================================
 CREATE TABLE journal_entry_line (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -619,13 +768,30 @@ CREATE TABLE journal_entry_line (
   base_credit_amount DECIMAL(20,4) NOT NULL DEFAULT 0,
   created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
 
-  -- One of debit or credit must be zero (double entry)
+  -- One of debit or credit must be zero (double entry). Realized FX exists
+  -- only in base currency, so a line may also be zero on both transaction
+  -- sides as long as exactly one base-currency side is positive.
   CONSTRAINT je_line_double_entry CHECK (
-    (debit_amount = 0 AND credit_amount > 0) OR
-    (credit_amount = 0 AND debit_amount > 0)
+    (debit_amount = 0 AND credit_amount > 0)
+    OR (credit_amount = 0 AND debit_amount > 0)
+    OR (
+      debit_amount = 0
+      AND credit_amount = 0
+      AND (
+        (base_debit_amount = 0 AND base_credit_amount > 0)
+        OR (base_credit_amount = 0 AND base_debit_amount > 0)
+      )
+    )
+  ),
+  CONSTRAINT je_line_base_double_entry CHECK (
+    (base_debit_amount = 0 AND base_credit_amount > 0)
+    OR (base_credit_amount = 0 AND base_debit_amount > 0)
   ),
   CONSTRAINT je_line_amounts_positive CHECK (
     debit_amount >= 0 AND credit_amount >= 0
+  ),
+  CONSTRAINT je_line_base_amounts_positive CHECK (
+    base_debit_amount >= 0 AND base_credit_amount >= 0
   )
 );
 
@@ -638,7 +804,7 @@ CREATE POLICY tenant_isolation ON journal_entry_line
   USING (tenant_id = current_setting('app.tenant_id')::uuid);
 
 -- ============================================================
--- TABLE 14: CREDIT MEMO
+-- TABLE: CREDIT MEMO
 -- Correction document against an approved/sent/paid invoice
 -- ============================================================
 CREATE TABLE credit_memo (
@@ -685,9 +851,75 @@ CREATE TRIGGER credit_memo_audit
   FOR EACH ROW EXECUTE FUNCTION write_audit_log();
 
 -- ============================================================
--- TABLE 15: AUDIT LOG
--- Immutable SOX compliance trail
--- Written by DB triggers — cannot be bypassed
+-- TABLE: DELIVERY OUTBOX
+-- Durable invoice-delivery events committed atomically with
+-- approval. Transactional outbox -> SQS -> consumer pipeline.
+-- ============================================================
+CREATE TABLE delivery_outbox (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id         UUID NOT NULL REFERENCES tenant(id),
+  entity_id         UUID NOT NULL REFERENCES entity(id),
+  invoice_id        UUID NOT NULL REFERENCES invoice(id),
+  event_type        VARCHAR(50) NOT NULL,
+  payload           JSONB NOT NULL,
+  status            VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+  attempt_count     INTEGER NOT NULL DEFAULT 0,
+  max_attempts      INTEGER NOT NULL DEFAULT 3,
+  next_attempt_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+  locked_at         TIMESTAMP,
+  delivered_at      TIMESTAMP,
+  last_error        TEXT,
+  created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMP NOT NULL DEFAULT NOW(),
+  -- SQS publication lifecycle
+  publish_attempt_count INTEGER NOT NULL DEFAULT 0,
+  max_publish_attempts  INTEGER NOT NULL DEFAULT 10,
+  sqs_message_id        VARCHAR(100),
+  published_at          TIMESTAMP,
+
+  CONSTRAINT delivery_outbox_event_unique UNIQUE (invoice_id, event_type),
+  CONSTRAINT delivery_outbox_status_valid CHECK (
+    status IN (
+      'PENDING', 'PROCESSING', 'PUBLISHED', 'DELIVERING',
+      'DELIVERED', 'DEAD'
+    )
+  ),
+  CONSTRAINT delivery_outbox_attempts_valid CHECK (
+    attempt_count >= 0 AND max_attempts > 0 AND attempt_count <= max_attempts
+  ),
+  CONSTRAINT delivery_outbox_publish_attempts_valid CHECK (
+    publish_attempt_count >= 0
+    AND max_publish_attempts > 0
+    AND publish_attempt_count <= max_publish_attempts
+  )
+);
+
+CREATE INDEX idx_delivery_outbox_claim
+  ON delivery_outbox(status, next_attempt_at, created_at);
+CREATE INDEX idx_delivery_outbox_tenant
+  ON delivery_outbox(tenant_id);
+CREATE INDEX idx_delivery_outbox_invoice
+  ON delivery_outbox(tenant_id, entity_id, invoice_id, created_at);
+
+ALTER TABLE delivery_outbox ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON delivery_outbox
+  USING (
+    tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid
+  )
+  WITH CHECK (
+    tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid
+  );
+
+COMMENT ON TABLE delivery_outbox IS
+  'Transactional outbox. At-least-once delivery; consumers deduplicate by event id.';
+
+COMMENT ON COLUMN delivery_outbox.sqs_message_id IS
+  'Latest SQS message ID; duplicate publishes remain safe via the outbox event ID.';
+
+-- ============================================================
+-- TABLE: AUDIT LOG
+-- Immutable SOX compliance trail. Written by DB triggers —
+-- cannot be bypassed by the application.
 -- ============================================================
 CREATE TABLE audit_log (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -715,9 +947,14 @@ CREATE INDEX idx_audit_table_record ON audit_log(table_name, record_id);
 CREATE INDEX idx_audit_changed_at ON audit_log(changed_at DESC);
 CREATE INDEX idx_audit_changed_by ON audit_log(changed_by);
 
+COMMENT ON TABLE audit_log IS
+  'Immutable. Written by DB triggers. Archived to S3 WORM after 6 months. 7 year retention per SOX.';
+
 -- ============================================================
--- IDEMPOTENCY KEYS TABLE
--- Prevents duplicate processing for all synchronous write APIs
+-- TABLE: IDEMPOTENCY KEY
+-- Prevents duplicate processing for all synchronous write APIs.
+-- Scoped by entity as well as tenant so two entities in the same
+-- tenant cannot collide on a client-generated key.
 -- ============================================================
 CREATE TABLE idempotency_key (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -760,9 +997,12 @@ CREATE POLICY tenant_isolation ON idempotency_key
 
 -- ============================================================
 -- MATERIALIZED VIEW: AR AGING
--- Pre-computed for performance (refreshed every 5 minutes)
--- Current snapshot only. "as_of" is the refresh timestamp so users know
--- staleness; it is not a caller-selected historical reporting date.
+-- Pre-computed for performance (refreshed every 5 minutes by
+-- pg_cron — see 003_setup_pg_cron.sh). Base-currency subledger
+-- report. DRAFT invoices have not posted to AR and must not
+-- appear; PAID/VOID/WRITTEN_OFF have no open receivable.
+-- "as_of" is the refresh timestamp so users know staleness; it
+-- is not a caller-selected historical reporting date.
 -- ============================================================
 CREATE MATERIALIZED VIEW ar_aging AS
 SELECT
@@ -773,42 +1013,42 @@ SELECT
   NOW() AS as_of,
   COUNT(*) FILTER (
     WHERE i.due_date >= CURRENT_DATE
-    AND i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
+      AND i.status IN ('APPROVED', 'SENT', 'PARTIALLY_PAID')
   ) AS current_count,
-  COALESCE(SUM(i.balance_amount) FILTER (
+  COALESCE(SUM(i.base_balance_amount) FILTER (
     WHERE i.due_date >= CURRENT_DATE
-    AND i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
+      AND i.status IN ('APPROVED', 'SENT', 'PARTIALLY_PAID')
   ), 0) AS current_amount,
-  COALESCE(SUM(i.balance_amount) FILTER (
+  COUNT(*) FILTER (
     WHERE i.due_date < CURRENT_DATE
-    AND i.due_date >= CURRENT_DATE - INTERVAL '30 days'
-    AND i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
+      AND i.due_date >= CURRENT_DATE - INTERVAL '30 days'
+      AND i.status IN ('APPROVED', 'SENT', 'PARTIALLY_PAID')
+  ) AS days_30_count,
+  COALESCE(SUM(i.base_balance_amount) FILTER (
+    WHERE i.due_date < CURRENT_DATE
+      AND i.due_date >= CURRENT_DATE - INTERVAL '30 days'
+      AND i.status IN ('APPROVED', 'SENT', 'PARTIALLY_PAID')
   ), 0) AS days_30_amount,
   COUNT(*) FILTER (
-    WHERE i.due_date < CURRENT_DATE
-    AND i.due_date >= CURRENT_DATE - INTERVAL '30 days'
-    AND i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
-  ) AS days_30_count,
-  COALESCE(SUM(i.balance_amount) FILTER (
     WHERE i.due_date < CURRENT_DATE - INTERVAL '30 days'
-    AND i.due_date >= CURRENT_DATE - INTERVAL '60 days'
-    AND i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
+      AND i.due_date >= CURRENT_DATE - INTERVAL '60 days'
+      AND i.status IN ('APPROVED', 'SENT', 'PARTIALLY_PAID')
+  ) AS days_60_count,
+  COALESCE(SUM(i.base_balance_amount) FILTER (
+    WHERE i.due_date < CURRENT_DATE - INTERVAL '30 days'
+      AND i.due_date >= CURRENT_DATE - INTERVAL '60 days'
+      AND i.status IN ('APPROVED', 'SENT', 'PARTIALLY_PAID')
   ), 0) AS days_60_amount,
   COUNT(*) FILTER (
-    WHERE i.due_date < CURRENT_DATE - INTERVAL '30 days'
-    AND i.due_date >= CURRENT_DATE - INTERVAL '60 days'
-    AND i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
-  ) AS days_60_count,
-  COALESCE(SUM(i.balance_amount) FILTER (
     WHERE i.due_date < CURRENT_DATE - INTERVAL '60 days'
-    AND i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
-  ), 0) AS days_90_plus_amount,
-  COUNT(*) FILTER (
-    WHERE i.due_date < CURRENT_DATE - INTERVAL '60 days'
-    AND i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
+      AND i.status IN ('APPROVED', 'SENT', 'PARTIALLY_PAID')
   ) AS days_90_plus_count,
-  COALESCE(SUM(i.balance_amount) FILTER (
-    WHERE i.status NOT IN ('PAID', 'VOID', 'WRITTEN_OFF')
+  COALESCE(SUM(i.base_balance_amount) FILTER (
+    WHERE i.due_date < CURRENT_DATE - INTERVAL '60 days'
+      AND i.status IN ('APPROVED', 'SENT', 'PARTIALLY_PAID')
+  ), 0) AS days_90_plus_amount,
+  COALESCE(SUM(i.base_balance_amount) FILTER (
+    WHERE i.status IN ('APPROVED', 'SENT', 'PARTIALLY_PAID')
   ), 0) AS total_outstanding
 FROM invoice i
 JOIN customer c ON c.id = i.customer_id
@@ -831,24 +1071,3 @@ CREATE INDEX idx_ar_aging_tenant ON ar_aging(tenant_id);
 -- 3200 Deferred Revenue
 -- 4100 Bad Debt Expense
 -- 4200 FX Gain/Loss
-
--- ============================================================
--- COMMENTS ON KEY DESIGN DECISIONS
--- ============================================================
-COMMENT ON TABLE journal_entry IS
-  'Immutable. No UPDATE/DELETE ever. Corrections via reversing entries only. SOX requirement.';
-
-COMMENT ON TABLE audit_log IS
-  'Immutable. Written by DB triggers. Archived to S3 WORM after 6 months. 7 year retention per SOX.';
-
-COMMENT ON COLUMN invoice.exchange_rate IS
-  'Rate locked on invoice_date. FX gain/loss calculated on payment vs this rate.';
-
-COMMENT ON COLUMN payment.idempotency_key IS
-  'Client-supplied key to prevent duplicate payment processing on retry.';
-
-COMMENT ON COLUMN invoice.is_intercompany IS
-  'TRUE when sender and receiver are both entities within same tenant. Eliminated in consolidated reports.';
-
-COMMENT ON COLUMN app_user.roles IS
-  'Array of roles. SOX requires invoice creator != approver (enforced in invoice.check constraint).';

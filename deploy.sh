@@ -290,122 +290,51 @@ log "Starting PostgreSQL, LocalStack SQS, and the delivery/JWKS stub"
 docker compose up "${up_options[@]}" db localstack stub
 wait_for_database
 
-log "Applying missing database migrations"
-has_aging_counts="$(
+log "Checking database schema"
+# migrations/001_init.sql is a from-scratch script (plain CREATE TABLE, no
+# IF NOT EXISTS), so it only runs automatically via Postgres's own
+# docker-entrypoint-initdb.d on a genuinely empty volume. This check exists
+# solely to catch a volume from before the migrations/ consolidation into
+# 001_init.sql (pre 2026-07-22) that has an older schema on disk: such a
+# volume can no longer be upgraded incrementally, since the individual
+# numbered migration files it would need no longer exist.
+schema_exists="$(
   docker compose exec -T db psql -U erp_user -d erp_db -Atc \
-    "SELECT EXISTS (
-       SELECT 1
-       FROM pg_attribute attribute
-       JOIN pg_class relation ON relation.oid = attribute.attrelid
-       JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
-       WHERE namespace.nspname = 'public'
-         AND relation.relname = 'ar_aging'
-         AND relation.relkind = 'm'
-         AND attribute.attname = 'current_count'
-         AND attribute.attnum > 0
-         AND NOT attribute.attisdropped
-     );"
+    "SELECT to_regclass('public.tenant') IS NOT NULL;"
 )"
-if [ "$has_aging_counts" != "t" ]; then
-  docker compose exec -T db psql -U erp_user -d erp_db \
-    -v ON_ERROR_STOP=1 \
-    -f /docker-entrypoint-initdb.d/002_add_ar_aging_bucket_counts.sql
+if [ "$schema_exists" != "t" ]; then
+  echo "Fresh database volume — schema will be created from migrations/001_init.sql on first boot"
 else
-  echo "Migration 002 already present"
+  schema_current="$(
+    docker compose exec -T db psql -U erp_user -d erp_db -Atc \
+      "SELECT EXISTS (
+         SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'journal_entry'::regclass
+           AND conname = 'je_reference_type_valid'
+           AND pg_get_constraintdef(oid) LIKE '%VOID%'
+       );"
+  )"
+  if [ "$schema_current" != "t" ]; then
+    cat >&2 <<'EOF'
+
+This database volume predates the migrations/ consolidation into a single
+001_init.sql and cannot be upgraded in place — the individual numbered
+migration files it would need no longer exist.
+
+Reset the volume and let 001_init.sql create the schema from scratch:
+  docker compose down
+  docker volume rm erp-ar-module_postgres_data   # check `docker volume ls` for the exact name
+  ./deploy.sh --seed --test
+
+EOF
+    exit 1
+  else
+    echo "Schema is current"
+  fi
 fi
 
-# Safe to run repeatedly: creates the extension and job only when absent.
+# Safe to run repeatedly: creates the extension and cron jobs only when absent.
 docker compose exec -T db /docker-entrypoint-initdb.d/003_setup_pg_cron.sh
-
-outbox_table="$(
-  docker compose exec -T db psql -U erp_user -d erp_db -Atc \
-    "SELECT COALESCE(to_regclass('public.delivery_outbox')::text, '');"
-)"
-if [ "$outbox_table" != "delivery_outbox" ]; then
-  docker compose exec -T db psql -U erp_user -d erp_db \
-    -v ON_ERROR_STOP=1 \
-    -f /docker-entrypoint-initdb.d/004_delivery_outbox.sql
-else
-  echo "Migration 004 already present"
-fi
-
-outbox_has_sqs_fields="$(
-  docker compose exec -T db psql -U erp_user -d erp_db -Atc \
-    "SELECT EXISTS (
-       SELECT 1
-       FROM information_schema.columns
-       WHERE table_schema = 'public'
-         AND table_name = 'delivery_outbox'
-         AND column_name = 'sqs_message_id'
-     );"
-)"
-if [ "$outbox_has_sqs_fields" != "t" ]; then
-  docker compose exec -T db psql -U erp_user -d erp_db \
-    -v ON_ERROR_STOP=1 \
-    -f /docker-entrypoint-initdb.d/009_sqs_delivery_pipeline.sql
-else
-  echo "Migration 009 already present"
-fi
-
-idempotency_has_entity="$(
-  docker compose exec -T db psql -U erp_user -d erp_db -Atc \
-    "SELECT EXISTS (
-       SELECT 1
-       FROM information_schema.columns
-       WHERE table_schema = 'public'
-         AND table_name = 'idempotency_key'
-         AND column_name = 'entity_id'
-     );"
-)"
-if [ "$idempotency_has_entity" != "t" ]; then
-  docker compose exec -T db psql -U erp_user -d erp_db \
-    -v ON_ERROR_STOP=1 \
-    -f /docker-entrypoint-initdb.d/005_entity_scoped_idempotency.sql
-else
-  echo "Migration 005 already present"
-fi
-
-fx_import_table="$(
-  docker compose exec -T db psql -U erp_user -d erp_db -Atc \
-    "SELECT COALESCE(to_regclass('public.fx_import_job')::text, '');"
-)"
-if [ "$fx_import_table" != "fx_import_job" ]; then
-  docker compose exec -T db psql -U erp_user -d erp_db \
-    -v ON_ERROR_STOP=1 \
-    -f /docker-entrypoint-initdb.d/006_fx_rate_ingestion.sql
-else
-  echo "Migration 006 already present"
-fi
-
-aging_uses_base_currency="$(
-  docker compose exec -T db psql -U erp_user -d erp_db -Atc \
-    "SELECT POSITION(
-       'base_balance_amount' IN pg_get_viewdef('ar_aging'::regclass, true)
-     ) > 0;"
-)"
-if [ "$aging_uses_base_currency" != "t" ]; then
-  docker compose exec -T db psql -U erp_user -d erp_db \
-    -v ON_ERROR_STOP=1 \
-    -f /docker-entrypoint-initdb.d/007_base_currency_ar_aging.sql
-else
-  echo "Migration 007 already present"
-fi
-
-base_only_fx_lines="$(
-  docker compose exec -T db psql -U erp_user -d erp_db -Atc \
-    "SELECT EXISTS (
-       SELECT 1 FROM pg_constraint
-       WHERE conrelid = 'journal_entry_line'::regclass
-         AND conname = 'je_line_base_double_entry'
-     );"
-)"
-if [ "$base_only_fx_lines" != "t" ]; then
-  docker compose exec -T db psql -U erp_user -d erp_db \
-    -v ON_ERROR_STOP=1 \
-    -f /docker-entrypoint-initdb.d/008_base_only_fx_journal_lines.sql
-else
-  echo "Migration 008 already present"
-fi
 
 log "Refreshing the aging snapshot for deterministic health verification"
 docker compose exec -T db psql -U erp_user -d erp_db \

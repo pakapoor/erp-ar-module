@@ -329,22 +329,18 @@ docker compose logs --tail=100 app db localstack outbox_publisher stub delivery_
 - Outbox remains PENDING: confirm LocalStack and `outbox_publisher` are Up.
 - Outbox remains PUBLISHED: confirm `delivery_worker` and `stub` are Up, then
   inspect `last_error`, SQS queue attributes, and worker logs.
-- Migration/table missing on an old volume: Docker entrypoint migrations only
-  run when a volume is first initialized. Preserve the volume and run:
+- Table/constraint missing on an old volume: `migrations/001_init.sql` only
+  runs automatically via the Docker entrypoint when a volume is first
+  initialized, and (since the migrations/ consolidation into a single file)
+  can no longer be applied incrementally on top of an older schema.
+  `deploy.sh` detects this case itself and exits with instructions to reset
+  the volume:
 
   ```bash
-  docker compose up -d --build --force-recreate db
-  docker compose exec -T db /docker-entrypoint-initdb.d/003_setup_pg_cron.sh
-  docker compose exec -T db psql -U erp_user -d erp_db \
-    -f /docker-entrypoint-initdb.d/004_delivery_outbox.sql
-  docker compose exec -T db psql -U erp_user -d erp_db \
-    -f /docker-entrypoint-initdb.d/009_sqs_delivery_pipeline.sql
+  docker compose down
+  docker volume rm erp-ar-module_postgres_data   # check `docker volume ls` for the exact name
+  ./deploy.sh --seed --test
   ```
-
-  `deploy.sh` detects and applies migration 005 automatically when idempotency
-  keys are not yet entity-scoped. Apply each migration only after checking
-  which versions that development database already contains; migration `004`
-  is not designed to recreate an existing policy repeatedly.
 - Port conflict: override `BASE_URL` for the script only if the app is exposed
   elsewhere, for example
   `BASE_URL=http://localhost:8080 ./tests/integration/test_api.sh`.
