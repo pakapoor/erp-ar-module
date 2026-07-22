@@ -1,6 +1,7 @@
 #!/bin/bash
 # Edit a DRAFT invoice (creator only; covers fresh drafts and rejected invoices).
-# Usage: ./3_1_patch_invoice.sh <INVOICE_ID> [description] [quantity] [unit_price]
+# With arg: patches that invoice. No arg: patches the last invoice from the last create run.
+# Usage: ./3_1_patch_invoice.sh [INVOICE_ID] [description] [quantity] [unit_price]
 
 SESSION=/Users/pankajkapoor/projects/erp-ar-module/debug/.debug_session
 PROJECT=/Users/pankajkapoor/projects/erp-ar-module
@@ -11,12 +12,7 @@ if [ ! -f "$SESSION" ]; then
   exit 1
 fi
 
-INVOICE_ID=${1:-}
-if [ -z "$INVOICE_ID" ]; then
-  echo "ERROR: Invoice ID is required."
-  echo "Usage: ./3_1_patch_invoice.sh <INVOICE_ID> [description] [quantity] [unit_price]"
-  exit 1
-fi
+INVOICE_ID=${1:-$(python3 -c "import json; print(json.load(open('$SESSION'))['last_invoice_id'])")}
 
 DESCRIPTION=${2:-"Corrected line item"}
 QUANTITY=${3:-10}
