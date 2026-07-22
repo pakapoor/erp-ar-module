@@ -35,3 +35,4 @@ Thumbs.db
 debug/.last_invoice_id
 debug/*.log
 debug/.debug_session
+debug/.bootstrap_session

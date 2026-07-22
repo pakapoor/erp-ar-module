@@ -56,6 +56,37 @@ See [API Design](docs/api-design.md) for full contracts and error codes.
 
 ---
 
+## Functional Requirements
+
+| ID | Requirement |
+|---|---|
+| FR1 | Create invoice with multi-line items, tax calculation, currency support |
+| FR2 | Approve invoice — generates GL journal entry atomically; Reject reverts to DRAFT |
+| FR2b | Edit DRAFT/REJECTED invoice via PATCH — replaces line items, recalculates totals |
+| FR3 | Record payment with FIFO auto-allocation, partial payment, overpayment handling |
+| FR4 | Deliver invoice to customer via transactional outbox → SQS (non-blocking) |
+| FR5 | Issue credit memo with GL reversal — reduces AR without cancelling invoice |
+| FR-B1 | Write off uncollectible invoice — posts bad debt expense to GL |
+| FR-B2 | Void invoice — full GL reversal; allowed on DRAFT/APPROVED/SENT only |
+| FR-B3 | AR Aging report — buckets by due date (current, 1-30, 31-60, 61-90, 90+) |
+
+---
+
+## Non-Functional Requirements
+
+| NFR | Approach |
+|---|---|
+| Multi-tenancy | Every table has tenant_id; RLS enforces isolation at DB level |
+| Idempotency | X-Idempotency-Key required on all write APIs; key + hash stored atomically |
+| Optimistic concurrency | If-Match versioning on approve/patch — prevents lost updates |
+| SOX segregation of duties | created_by != approved_by enforced in application layer |
+| Payment correctness | SERIALIZABLE isolation prevents double-allocation across concurrent payments |
+| Guaranteed delivery | Transactional outbox commits delivery event with invoice in same ACID transaction |
+| Audit trail | DB-level audit triggers fire on all state changes — cannot be bypassed by app code |
+| Test coverage | 70%+ coverage gate enforced in CI |
+
+---
+
 ## Architecture
 
 ![System Architecture](docs/architecture.svg)

@@ -327,6 +327,104 @@ class JournalEntriesResponse(BaseModel):
 
 
 # ============================================================
+# TENANT SCHEMAS
+# ============================================================
+
+class TenantCreate(BaseModel):
+    """POST /tenants — what client sends"""
+    name: str = Field(..., min_length=1, max_length=255)
+    base_currency: str = Field(default="USD", min_length=3, max_length=3)
+
+    @field_validator("base_currency")
+    @classmethod
+    def normalize_base_currency(cls, value: str) -> str:
+        return normalize_supported_currency(value)
+
+
+class TenantUpdate(BaseModel):
+    """PATCH /tenants/{id} — what client sends"""
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    base_currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
+    is_active: Optional[bool] = None
+
+    @field_validator("base_currency")
+    @classmethod
+    def normalize_base_currency(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        return normalize_supported_currency(value)
+
+    # NOT in request body:
+    # If-Match header → version check
+
+
+class TenantResponse(BaseModel):
+    """GET/POST/PATCH /tenants... — what server returns"""
+    id: str
+    name: str
+    base_currency: str
+    is_active: bool
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ============================================================
+# ENTITY SCHEMAS
+# ============================================================
+
+class EntityCreate(BaseModel):
+    """POST /entities — what client sends. tenant_id comes from the caller's JWT."""
+    name: str = Field(..., min_length=1, max_length=255)
+    currency: str = Field(..., min_length=3, max_length=3)
+    parent_entity_id: Optional[str] = None
+
+    @field_validator("currency")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        return normalize_supported_currency(value)
+
+    # NOT in request body — server derives this:
+    # tenant_id ← from JWT (an entity can only be created for the caller's own, existing tenant)
+
+
+class EntityUpdate(BaseModel):
+    """PATCH /entities/{id} — what client sends"""
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
+    parent_entity_id: Optional[str] = None
+    is_active: Optional[bool] = None
+
+    @field_validator("currency")
+    @classmethod
+    def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        return normalize_supported_currency(value)
+
+    # NOT in request body:
+    # If-Match header → version check
+    # tenant_id ← immutable via this endpoint
+
+
+class EntityResponse(BaseModel):
+    """GET/POST/PATCH /entities... — what server returns"""
+    id: str
+    tenant_id: str
+    parent_entity_id: Optional[str]
+    name: str
+    currency: str
+    is_active: bool
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ============================================================
 # COMMON SCHEMAS
 # ============================================================
 

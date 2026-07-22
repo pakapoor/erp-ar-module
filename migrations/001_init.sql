@@ -131,6 +131,7 @@ CREATE TABLE tenant (
   name              VARCHAR(255) NOT NULL,
   base_currency     CHAR(3) NOT NULL DEFAULT 'USD',
   is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+  version           INTEGER NOT NULL DEFAULT 1,  -- optimistic locking (ABA prevention)
   created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMP NOT NULL DEFAULT NOW(),
 
@@ -151,7 +152,9 @@ CREATE TABLE entity (
   name              VARCHAR(255) NOT NULL,
   currency          CHAR(3) NOT NULL,
   is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+  version           INTEGER NOT NULL DEFAULT 1,  -- optimistic locking (ABA prevention)
   created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMP NOT NULL DEFAULT NOW(),
 
   CONSTRAINT entity_currency_valid CHECK (char_length(currency) = 3),
   CONSTRAINT entity_name_tenant_unique UNIQUE (tenant_id, name)
@@ -163,6 +166,13 @@ CREATE INDEX idx_entity_parent ON entity(parent_entity_id);
 ALTER TABLE entity ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON entity
   USING (tenant_id = current_setting('app.tenant_id')::uuid);
+
+-- entity has a tenant_id column (unlike tenant itself), so the shared
+-- write_audit_log() trigger — which reads NEW.tenant_id/OLD.tenant_id — can
+-- safely be attached here.
+CREATE TRIGGER entity_audit
+  AFTER INSERT OR UPDATE OR DELETE ON entity
+  FOR EACH ROW EXECUTE FUNCTION write_audit_log();
 
 -- ============================================================
 -- TABLE: GL ACCOUNT
@@ -959,7 +969,7 @@ COMMENT ON TABLE audit_log IS
 CREATE TABLE idempotency_key (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id         UUID NOT NULL REFERENCES tenant(id),
-  entity_id         UUID NOT NULL REFERENCES entity(id),
+  entity_id         UUID REFERENCES entity(id),  -- NULL for tenant-level operations that precede any entity existing (e.g. creating the first entity in a tenant)
   endpoint          VARCHAR(100) NOT NULL,
   key               VARCHAR(255) NOT NULL,
   request_hash      VARCHAR(64) NOT NULL,

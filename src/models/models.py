@@ -31,6 +31,7 @@ class Tenant(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -49,7 +50,9 @@ class Entity(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
     tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="entities")
     children: Mapped[List["Entity"]] = relationship("Entity", back_populates="parent")
@@ -519,7 +522,7 @@ class IdempotencyKey(Base):
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
     tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenant.id"), nullable=False)
-    entity_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("entity.id"), nullable=False)
+    entity_id: Mapped[Optional[str]] = mapped_column(UUID(as_uuid=False), ForeignKey("entity.id"), nullable=True)
     endpoint: Mapped[str] = mapped_column(String(100), nullable=False)
     key: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="PROCESSING")

@@ -397,6 +397,7 @@ if [ "$RUN_TESTS" = true ]; then
   log "Running integration tests"
   ./tests/integration/test_api.sh
   ./tests/integration/test_api_negative.sh
+  ./tests/integration/test_tenant_entity_api.sh
   ./tests/concurrency/test_payment_concurrency.sh
   ./tests/integration/test_credit_memo.sh
   ./tests/integration/test_delivery_sqs.sh

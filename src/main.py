@@ -17,10 +17,12 @@ from src.routers import (
     aging,
     credit_memos,
     delivery,
+    entities,
     health,
     invoices,
     journal_entries,
     payments,
+    tenants,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -141,6 +143,8 @@ async def version_conflict_handler(request: Request, exc: VersionConflictExcepti
 # Routers
 # ============================================================
 app.include_router(health.router, tags=["Health"])
+app.include_router(tenants.router, prefix="/api/v1", tags=["Tenants"])
+app.include_router(entities.router, prefix="/api/v1", tags=["Entities"])
 app.include_router(invoices.router, prefix="/api/v1", tags=["Invoices"])
 app.include_router(payments.router, prefix="/api/v1", tags=["Payments"])
 app.include_router(aging.router, prefix="/api/v1", tags=["AR Aging"])
