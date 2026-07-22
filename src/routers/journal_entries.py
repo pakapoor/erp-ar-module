@@ -59,6 +59,7 @@ async def get_journal_entries(
               AND entity_id = :entity_id
               AND (
                 (reference_type = 'INVOICE' AND reference_id = :invoice_id)
+                OR (reference_type IN ('VOID', 'WRITE_OFF') AND reference_id = :invoice_id)
                 OR id IN (
                     SELECT je.id
                     FROM journal_entry je
@@ -99,6 +100,7 @@ async def get_journal_entries(
               AND entity_id = :entity_id
               AND (
                 (reference_type = 'INVOICE' AND reference_id = :invoice_id)
+                OR (reference_type IN ('VOID', 'WRITE_OFF') AND reference_id = :invoice_id)
                 OR id IN (
                     SELECT je.id
                     FROM journal_entry je
@@ -145,6 +147,7 @@ async def get_journal_entries(
                   AND entity_id = :entity_id
                   AND (
                     (reference_type = 'INVOICE' AND reference_id = :invoice_id)
+                    OR (reference_type IN ('VOID', 'WRITE_OFF') AND reference_id = :invoice_id)
                     OR id IN (
                         SELECT je.id
                         FROM journal_entry je
