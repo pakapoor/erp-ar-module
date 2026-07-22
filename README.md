@@ -150,6 +150,7 @@ See [Test Results](docs/tests.md) for dashboard summary and [Test Catalog](docs/
 - [Requirements Traceability](docs/requirements-traceability.md) -- what is implemented vs deferred
 - [Experience Showcase](docs/experience-showcase.md) -- Meta and Lenovo context for design decisions
 - [Deployment Guide](docs/deployment.md) -- local setup and troubleshooting
+- [Manual Debugging](docs/manual-debugging.md) -- curl-driven scripts in `debug/` for exercising invoice, payment, GL, and aging flows by hand
 
 ---
 
