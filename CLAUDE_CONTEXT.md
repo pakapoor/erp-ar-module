@@ -52,7 +52,7 @@ FX: fx_rate_worker ingests ECB rates, staleness enforced
    - debug/.debug_session: JSON with tenant_id, entity_id, user_creator_id,
      user_approver_id, user_payer_id, customer_id, invoice1_id, invoice2_id, last_invoice_id
 
-4. debug/invoice/ scripts (all use .debug_session, all have --max-time 600):
+4. debug/ scripts (all use .debug_session, all have --max-time 600):
    1_create_invoice.sh   -- runs setup, creates 2 invoices (NET15 + NET30 for FIFO test)
    2_get_invoice.sh      -- no arg: both invoices; with arg: specific UUID
    3_approve_invoice.sh  -- no arg: approves both; with arg: specific UUID
@@ -82,27 +82,27 @@ FX: fx_rate_worker ingests ECB rates, staleness enforced
 - SOX segregation: creator != approver/rejector, payment_recorder separate role
 
 ## Debug Flow (working end-to-end verified)
-./debug/invoice/1_create_invoice.sh       # fresh session + 2 invoices
-./debug/invoice/3_approve_invoice.sh      # approves both, triggers delivery
+./debug/1_create_invoice.sh       # fresh session + 2 invoices
+./debug/3_approve_invoice.sh      # approves both, triggers delivery
 docker compose logs stub -f               # see 2 x delivery banners
-./debug/invoice/4_pay_invoice.sh 118000   # FIFO pays invoice1 (NET15) first
-./debug/invoice/2_get_invoice.sh          # payment_history populated
-./debug/invoice/5_journal_entries.sh      # GL entries: Dr AR/Cr Revenue/Cr Tax + Dr Cash/Cr AR
+./debug/4_pay_invoice.sh 118000   # FIFO pays invoice1 (NET15) first
+./debug/2_get_invoice.sh          # payment_history populated
+./debug/5_journal_entries.sh      # GL entries: Dr AR/Cr Revenue/Cr Tax + Dr Cash/Cr AR
 
 ## Reject -> Edit -> Reapprove Flow
-./debug/invoice/1_create_invoice.sh
-./debug/invoice/3_2_reject_invoice.sh <invoice_id>   # back to DRAFT
-./debug/invoice/3_1_patch_invoice.sh <invoice_id>    # fix it
-./debug/invoice/3_approve_invoice.sh <invoice_id>    # reapprove
+./debug/1_create_invoice.sh
+./debug/3_2_reject_invoice.sh <invoice_id>   # back to DRAFT
+./debug/3_1_patch_invoice.sh <invoice_id>    # fix it
+./debug/3_approve_invoice.sh <invoice_id>    # reapprove
 
 ## Bonus API Flow (credit-memo / writeoff / void)
-./debug/invoice/1_create_invoice.sh
-./debug/invoice/3_approve_invoice.sh <invoice_id>
-./debug/invoice/4_pay_invoice.sh <partial_amount>     # partially pay first
-./debug/invoice/6_credit_memo.sh <invoice_id>
-./debug/invoice/7_writeoff.sh <invoice_id>
-./debug/invoice/8_void.sh <invoice_id>
-./debug/invoice/9_aging.sh                            # no arg uses session customer
+./debug/1_create_invoice.sh
+./debug/3_approve_invoice.sh <invoice_id>
+./debug/4_pay_invoice.sh <partial_amount>     # partially pay first
+./debug/6_credit_memo.sh <invoice_id>
+./debug/7_writeoff.sh <invoice_id>
+./debug/8_void.sh <invoice_id>
+./debug/9_aging.sh                            # no arg uses session customer
 
 ## DB Connection
 docker compose exec db psql -U erp_user -d erp_db -c '<query>'
