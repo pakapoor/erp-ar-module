@@ -57,14 +57,20 @@ FX: fx_rate_worker ingests ECB rates, staleness enforced
    2_get_invoice.sh      -- no arg: both invoices; with arg: specific UUID
    3_approve_invoice.sh  -- no arg: approves both; with arg: specific UUID
    3_2_reject_invoice.sh -- rejects invoice (created by VSCode agent)
-   3_1_patch_invoice.sh  -- patches DRAFT invoice (created by VSCode agent)
+   3_1_patch_invoice.sh  -- patches DRAFT invoice; args: <INVOICE_ID> [description]
    4_pay_invoice.sh      -- requires amount arg, AUTO/FIFO, NEFT method
    5_journal_entries.sh  -- no arg: both invoices; with arg: specific UUID
+   6_credit_memo.sh      -- POST /invoices/{id}/credit-memos, falls back to session file invoice ID
+   7_writeoff.sh         -- POST /invoices/{id}/writeoff, falls back to session file invoice ID
+   8_void.sh             -- POST /invoices/{id}/void, falls back to session file invoice ID
+   9_aging.sh            -- GET /customers/{id}/aging, falls back to session file customer ID
 
 5. Documentation updated:
    docs/api-design.md: added API2b (PATCH) and API3b (reject flow) sections at lines 562/656
 
 6. .gitignore: debug/.debug_session and debug/.last_invoice_id excluded
+
+7. debug/CLAUDE_CONTEXT.md moved to project root as CLAUDE_CONTEXT.md
 
 ## Key Architecture Decisions
 - No Redis: PostgreSQL owns all state, locks, idempotency
@@ -88,6 +94,15 @@ docker compose logs stub -f               # see 2 x delivery banners
 ./debug/invoice/3_2_reject_invoice.sh <invoice_id>   # back to DRAFT
 ./debug/invoice/3_1_patch_invoice.sh <invoice_id>    # fix it
 ./debug/invoice/3_approve_invoice.sh <invoice_id>    # reapprove
+
+## Bonus API Flow (credit-memo / writeoff / void)
+./debug/invoice/1_create_invoice.sh
+./debug/invoice/3_approve_invoice.sh <invoice_id>
+./debug/invoice/4_pay_invoice.sh <partial_amount>     # partially pay first
+./debug/invoice/6_credit_memo.sh <invoice_id>
+./debug/invoice/7_writeoff.sh <invoice_id>
+./debug/invoice/8_void.sh <invoice_id>
+./debug/invoice/9_aging.sh                            # no arg uses session customer
 
 ## DB Connection
 docker compose exec db psql -U erp_user -d erp_db -c '<query>'
